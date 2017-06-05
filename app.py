@@ -3,7 +3,7 @@ from functools import wraps
 import json
 import os
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlencode
 
 from flask import Flask, redirect, request, Response, url_for
 from flask_sqlalchemy import SQLAlchemy
@@ -49,6 +49,8 @@ class Zendesk(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     trigger_id = db.Column(db.Integer)
     target_id = db.Column(db.Integer)
+    admin_email = db.Column(db.Text)
+    api_key = db.Column(db.Text)
 
     def create_target(self, webhook_url):
         target_payload = {
@@ -90,6 +92,14 @@ class Zendesk(db.Model):
 
         resp = requests.post(ZENDESK_BASE_URL + '/api/v2/triggers.json', auth=ZENDESK_AUTH, data=trigger_payload)
         self.trigger_id = resp['trigger']['id']
+
+    def destroy_target(self):
+        requests.delete(ZENDESK_BASE_URL + '/targets/{id}.json'.format(id=self.target_id))
+        self.target_id = None
+
+    def destroy_trigger(self):
+        requests.delete(ZENDESK_BASE_URL + '/triggers/{id}.json'.format(id=self.trigger_id))
+        self.trigger_id = None
 
 
 class ZendeskTicketComment(db.Model):
@@ -138,17 +148,16 @@ class ZendeskTicket(db.Model):
     group = db.relationship('ZendeskGroup', backref=db.backref('tickets', lazy='dynamic'))
     requester = db.relationship('ZendeskUser', backref=db.backref('tickets', lazy='dynamic'))
 
-    def fetch(self):
+    def fetch_and_update(self):
         d = requests.get(ZENDESK_BASE_URL + '/tickets/{id}.json'.format(id=self.zendesk_id),
             auth=ZENDESK_AUTH).json()
-        self.zendesk_id = d['id']
         self.created = datetime.strptime(d['created_at'], '%Y-%m-%dT%H:%M:%SZ')
         self.updated = datetime.strptime(d['updated_at'], '%Y-%m-%dT%H:%M:%SZ')
         self.type = d['type']
         self.subject = d['subject']
         self.description = d['description']
         self.status = d['status']
-        self.tags = d['tags']
+        self.tags = sorted(d['tags'])
         
         requester = ZendeskUser.query.filter_by(zendesk_id=d['requester_id']).first()
         if requester:
@@ -171,8 +180,8 @@ class ZendeskTicket(db.Model):
 
     def fetch_comments(self):
         resp = requests.get(ZENDESK_BASE_URL + '/tickets/{ticket_id}/comments.json', auth=ZENDESK_AUTH)
-
         comments = []
+
         for d in resp.json()['comments']:
             if ZendeskTicketComment.query.filter_by(zendesk_id=d['id']).first():
                 pass
@@ -194,6 +203,26 @@ def index():
     return 'Welcome to Pipet'
 
 
+@app.route('/zendesk/auth')
+def zendesk_auth():
+    request_url = urlparse(request.url)
+    params = [
+        ('response_type', 'token'),
+        ('client_id', 'postgres_export'),
+        ('scope', 'targets:write targets:read tickets:write tickets:read triggers:write triggers:read'),
+        ('redirect_uri', request_url.scheme + '://' + request_url.netloc + url_for('zendesk_callback')),]
+    return redirect('https://sentry.zendesk.com/oauth/authorizations/new?' + urlencode(params))
+
+@app.route('/zendesk/callback')
+def zendesk_callback():
+    r = requests.post(
+        'https://sentry.zendesk.com/oauth/tokens',
+        headers={'Content-Type': 'application/json'},
+        data={"grant_type": "authorization_code", "code": request.args.get('code'),
+        "client_id": "postgres_export", "client_secret": "56bead761c133a593fddfcc42484b19030e6629c7a4d5a8ae77e28e3c45c02e1", 
+        "redirect_uri": "http://localhost:5000/zendesk/callback", "scope": "tickets:read" })
+    return str(r.json())
+
 @app.route('/zendesk/install')
 def zendesk_install():
     request_url = urlparse(request.url)
@@ -207,14 +236,29 @@ def zendesk_install():
     return redirect(url_for('index'))
 
 
+@app.route('/zendesk/uninstall')
+def zendesk_uninstall():
+    request_url = urlparse(request.url)
+    webhook_url = request_url.scheme + '://' + request_url.netloc + url_for('zendesk_hook')
+
+    z = Zendesk.query.first()
+    z.destroy_target()
+    z.destroy_trigger()
+    db.session.add(z)
+
+    return redirect(url_for('index'))
+
+
 @app.route("/zendesk/hook", methods=['POST'])
 @requires_auth
 def zendesk_hook():
     ticket_id = request.get_json()['id']
-    zt = ZendeskTicket(zendesk_id=ticket_id)
-    zt.fetch()
-    db.session.add(zt)
-    db.sesion.add(zt.fetch_comments())
+    ticket = ZendeskTicket.query.filter_by(zendesk_id=ticket_id).first()
+    if not ticket:
+        ticket = ZendeskTicket(zendesk_id=ticket_id)
+    ticket.fetch_and_update()
+    db.session.add(ticket)
+    db.sesion.add(ticket.fetch_comments())
 
     return ('', 204)
 
