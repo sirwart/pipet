@@ -13,6 +13,7 @@ from sqlalchemy.dialects.postgresql import ARRAY
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql+psycopg2://eric:@localhost/pipet'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.secret_key = '123'
 db = SQLAlchemy(app)
 
 ZENDESK_EMAIL = os.environ.get('ZENDESK_EMAIL')
@@ -47,26 +48,24 @@ def requires_auth(f):
 
 class Zendesk(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    trigger_id = db.Column(db.Integer)
-    target_id = db.Column(db.Integer)
+    subdomain = db.Column(db.Text)
     admin_email = db.Column(db.Text)
     api_key = db.Column(db.Text)
+    trigger_id = db.Column(db.Integer)
+    target_id = db.Column(db.Integer)
 
     def create_target(self, webhook_url):
-        target_payload = {
-            'title': 'Pipet',
-            'type': 'url_target',
-            'active': True,
-            'target_url': webhook_url,
-            'username': 'pipet',
-            'password': app.secret_key,
-            'method': 'post',
-            'content_type': 'application/json',
-        }
-        resp = requests.post(ZENDESK_BASE_URL + '/targets.json', auth=ZENDESK_AUTH, data=target_payload)
-        print(resp.json())
-        p = re.compile('^https://sentry.zendesk.com/api/v2/targets/(\d+).json$')
-        return p.match(resp.headers['Location']).group(1)
+        target_payload = {'target': {
+                'title': 'Pipet',
+                'type': 'http_target',
+                'active': True,
+                'target_url': webhook_url,
+                'username': 'pipet',
+                'password': app.secret_key,
+                'method': 'post',
+                'content_type': 'application/json',}}
+        resp = requests.post(ZENDESK_BASE_URL + '/targets.json', auth=ZENDESK_AUTH, json=target_payload)
+        self.target_id = resp.json()['target']['id']
 
     def create_trigger(self):
         trigger_payload = {'trigger': {
@@ -90,8 +89,8 @@ class Zendesk(db.Model):
             'title': 'Pipet Ticket Trigger',
         }}
 
-        resp = requests.post(ZENDESK_BASE_URL + '/api/v2/triggers.json', auth=ZENDESK_AUTH, data=trigger_payload)
-        self.trigger_id = resp['trigger']['id']
+        resp = requests.post(ZENDESK_BASE_URL + '/triggers.json', auth=ZENDESK_AUTH, json=trigger_payload)
+        self.trigger_id = resp.json()['trigger']['id']
 
     def destroy_target(self):
         requests.delete(ZENDESK_BASE_URL + '/targets/{id}.json'.format(id=self.target_id))
@@ -158,7 +157,7 @@ class ZendeskTicket(db.Model):
         self.description = d['description']
         self.status = d['status']
         self.tags = sorted(d['tags'])
-        
+
         requester = ZendeskUser.query.filter_by(zendesk_id=d['requester_id']).first()
         if requester:
             self.requester = requester
@@ -218,21 +217,22 @@ def zendesk_callback():
     r = requests.post(
         'https://sentry.zendesk.com/oauth/tokens',
         headers={'Content-Type': 'application/json'},
-        data={"grant_type": "authorization_code", "code": request.args.get('code'),
-        "client_id": "postgres_export", "client_secret": "56bead761c133a593fddfcc42484b19030e6629c7a4d5a8ae77e28e3c45c02e1", 
+        json={"grant_type": "authorization_code", "code": request.args.get('code'),
+        "client_id": "postgres_export", "client_secret": "56bead761c133a593fddfcc42484b19030e6629c7a4d5a8ae77e28e3c45c02e1",
         "redirect_uri": "http://localhost:5000/zendesk/callback", "scope": "tickets:read" })
     return str(r.json())
 
 @app.route('/zendesk/install')
 def zendesk_install():
     request_url = urlparse(request.url)
+    domain = os.environ.get('DEV_DOMAIN') or request_url.netloc
+
     webhook_url = request_url.scheme + '://' + request_url.netloc + url_for('zendesk_hook')
-    
+
     z = Zendesk()
     z.create_target(webhook_url)
     z.create_trigger()
     db.session.add(z)
-
     return redirect(url_for('index'))
 
 
