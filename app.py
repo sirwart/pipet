@@ -149,7 +149,7 @@ class ZendeskTicket(db.Model):
 
     def fetch_and_update(self):
         d = requests.get(ZENDESK_BASE_URL + '/tickets/{id}.json'.format(id=self.zendesk_id),
-            auth=ZENDESK_AUTH).json()
+            auth=ZENDESK_AUTH).json()['ticket']
         self.created = datetime.strptime(d['created_at'], '%Y-%m-%dT%H:%M:%SZ')
         self.updated = datetime.strptime(d['updated_at'], '%Y-%m-%dT%H:%M:%SZ')
         self.type = d['type']
