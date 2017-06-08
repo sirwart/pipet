@@ -5,7 +5,7 @@ import os
 import re
 from urllib.parse import urlparse, urlencode
 
-from flask import Flask, redirect, request, Response, url_for
+from flask import Flask, redirect, request, Response, render_template, url_for
 from flask_sqlalchemy import SQLAlchemy
 import requests
 from sqlalchemy.dialects.postgresql import ARRAY
@@ -199,18 +199,19 @@ class ZendeskTicket(db.Model):
 
 @app.route('/')
 def index():
-    return 'Welcome to Pipet'
+    return render_template('index.html')
 
 
 @app.route('/zendesk/auth')
 def zendesk_auth():
-    request_url = urlparse(request.url)
     params = [
-        ('response_type', 'token'),
-        ('client_id', 'postgres_export'),
-        ('scope', 'targets:write targets:read tickets:write tickets:read triggers:write triggers:read'),
-        ('redirect_uri', request_url.scheme + '://' + request_url.netloc + url_for('zendesk_callback')),]
-    return redirect('https://sentry.zendesk.com/oauth/authorizations/new?' + urlencode(params))
+        ('response_type', 'code'),
+        ('client_id', os.environ.get('ZENDESK_CLIENT')),
+        ('scope', 'targets:write targets:read tickets:write tickets:read triggers:write triggers:read')]
+    # Zendesk redirect uri should not be url encoded. Love it.
+    redirect_uri_param = '&redirect_uri=' + os.environ.get('PIPET_DOMAIN') + url_for('zendesk_callback')
+    return redirect('https://sentry.zendesk.com/oauth/authorizations/new?' + urlencode(params) + redirect_uri_param)
+
 
 @app.route('/zendesk/callback')
 def zendesk_callback():
@@ -218,16 +219,15 @@ def zendesk_callback():
         'https://sentry.zendesk.com/oauth/tokens',
         headers={'Content-Type': 'application/json'},
         json={"grant_type": "authorization_code", "code": request.args.get('code'),
-        "client_id": "postgres_export", "client_secret": "56bead761c133a593fddfcc42484b19030e6629c7a4d5a8ae77e28e3c45c02e1",
-        "redirect_uri": "http://localhost:5000/zendesk/callback", "scope": "tickets:read" })
-    return str(r.json())
+        "client_id": os.environ.get('ZENDESK_CLIENT'), "client_secret": os.environ.get('ZENDESK_SECRET'),
+        "redirect_uri": os.environ.get('PIPET_DOMAIN') + url_for('zendesk_callback'), "scope": "read" })
+    r.json()['access_token']
+    return redirect(url_for('index'))
+
 
 @app.route('/zendesk/install')
 def zendesk_install():
-    request_url = urlparse(request.url)
-    domain = os.environ.get('DEV_DOMAIN') or request_url.netloc
-
-    webhook_url = request_url.scheme + '://' + request_url.netloc + url_for('zendesk_hook')
+    webhook_url = os.environ.get('PIPET_DOMAIN') + url_for('zendesk_hook')
 
     z = Zendesk()
     z.create_target(webhook_url)
