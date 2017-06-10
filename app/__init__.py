@@ -2,9 +2,11 @@ import json
 import os
 
 from flask import Flask
-from flask_login import LoginManager, current_user
+from flask_login import current_user, LoginManager, UserMixin
 from flask_sqlalchemy import SQLAlchemy
-from flask_wtf import Form, fields, validators, Required
+from flask_wtf import FlaskForm
+from wtforms import StringField
+from wtforms.validators import Required
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql+psycopg2://eric:@localhost/pipet'
@@ -16,9 +18,6 @@ login_manager.login_view = "login"
 
 db = SQLAlchemy(app)
 
-from app.admin import admin
-app.register_blueprint(admin)
-
 from app.zendesk import zendesk
 app.register_blueprint(zendesk, url_prefix='/zendesk')
 
@@ -27,8 +26,9 @@ class User(UserMixin, db.Model):
 	id = db.Column(db.Integer, primary_key=True)
 
 
-class LoginForm(Form):
-	name = fields.TextField(validators=[Required()])
+class LoginForm(FlaskForm):
+	name = StringField(validators=[Required()])
+
 
 @app.route('/')
 def index():
