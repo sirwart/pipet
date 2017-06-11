@@ -2,11 +2,26 @@ from datetime import datetime
 import os
 
 from sqlalchemy.dialects.postgresql import ARRAY
+from flask_sqlalchemy import camel_to_snake_case
+from sqlalchemy import Column
+from sqlalchemy.schema import MetaData, ForeignKey
+from sqlalchemy.ext.declarative import as_declarative, declared_attr
+from sqlalchemy.types import Boolean, Text, Integer, DateTime
 
 from app import db
 
+SCHEMANAME = 'zendesk'
+TABLES = {}
 
-class Zendesk(db.Model):
+
+@as_declarative(metadata=MetaData(schema=SCHEMANAME), class_registry=TABLES)
+class Base(object):
+    @declared_attr
+    def __tablename__(cls):
+        return camel_to_snake_case(cls.__name__)
+
+
+class Client(Base):
     id = db.Column(db.Integer, primary_key=True)
     subdomain = db.Column(db.Text)
     admin_email = db.Column(db.Text)
@@ -61,7 +76,7 @@ class Zendesk(db.Model):
         self.trigger_id = None
 
 
-class ZendeskTicketComment(db.Model):
+class TicketComment(Base):
     """Cannot be deleted (unless ticket is deleted)"""
     id = db.Column(db.Integer, primary_key=True)
     zendesk_id = db.Column(db.Integer)
@@ -71,11 +86,11 @@ class ZendeskTicketComment(db.Model):
     ticket_id = db.Column(db.Integer, db.ForeignKey('zendesk_ticket.id'))
     author_id = db.Column(db.Integer, db.ForeignKey('zendesk_user.id'))
 
-    ticket = db.relationship('ZendeskTicket', backref=db.backref('comments', lazy='dynamic'))
-    author = db.relationship('ZendeskUser', backref=db.backref('comments', lazy='dynamic'))
+    ticket = db.relationship('Ticket', backref=db.backref('comments', lazy='dynamic'))
+    author = db.relationship('User', backref=db.backref('comments', lazy='dynamic'))
 
 
-class ZendeskUser(db.Model):
+class User(Base):
     id = db.Column(db.Integer, primary_key=True)
     zendesk_id = db.Column(db.Integer)
     created = db.Column(db.DateTime)
@@ -84,13 +99,13 @@ class ZendeskUser(db.Model):
     role = db.Column(db.Text)
 
 
-class ZendeskGroup(db.Model):
+class Group(Base):
     id = db.Column(db.Integer, primary_key=True)
     zendesk_id = db.Column(db.Integer)
     name = db.Column(db.Text)
 
 
-class ZendeskTicket(db.Model):
+class Ticket(Base):
     """Can be deleted by admins"""
     id = db.Column(db.Integer, primary_key=True)
     zendesk_id = db.Column(db.Integer)
@@ -104,8 +119,8 @@ class ZendeskTicket(db.Model):
     group_id = db.Column(db.Integer, db.ForeignKey('zendesk_group.id'))
     requester_id = db.Column(db.Integer, db.ForeignKey('zendesk_user.id'))
 
-    group = db.relationship('ZendeskGroup', backref=db.backref('tickets', lazy='dynamic'))
-    requester = db.relationship('ZendeskUser', backref=db.backref('tickets', lazy='dynamic'))
+    group = db.relationship('Group', backref=db.backref('tickets', lazy='dynamic'))
+    requester = db.relationship('User', backref=db.backref('tickets', lazy='dynamic'))
 
     def fetch_and_update(self):
         d = requests.get(ZENDESK_BASE_URL + '/tickets/{id}.json'.format(id=self.zendesk_id),
@@ -118,36 +133,36 @@ class ZendeskTicket(db.Model):
         self.status = d['status']
         self.tags = sorted(d['tags'])
 
-        requester = ZendeskUser.query.filter_by(zendesk_id=d['requester_id']).first()
+        requester = User.query.filter_by(zendesk_id=d['requester_id']).first()
         if requester:
             self.requester = requester
         else:
             rd = requests.get(ZENDESK_BASE_URL + '/users/{id}.json'.format(id=d['requester_id']),
                 auth=ZENDESK_AUTH).json()
-            self.requester = ZendeskUser(
+            self.requester = User(
                 zendesk_id=d['requester_id'],
                 created=datetime.strptime(rd['updated_at'], '%Y-%m-%dT%H:%M:%SZ'),
                 email=rd['email'],
                 name=rd['name'],
                 role=rd['role'])
 
-        group = ZendeskGroup.query.filter_by(zendesk_id=d['group_id']).first()
+        group = Group.query.filter_by(zendesk_id=d['group_id']).first()
         if group:
             self.group = group
         else:
             gd = requests.get(ZENDESK_BASE_URL + '/groups/{id}.json'.format(id=d['group_id']),
                 auth=ZENDESK_AUTH).json()
-            self.group = ZendeskGroup(zendesk_id=d['group_id'], name=gd['name'])
+            self.group = Group(zendesk_id=d['group_id'], name=gd['name'])
 
     def fetch_comments(self):
         resp = requests.get(ZENDESK_BASE_URL + '/tickets/{ticket_id}/comments.json', auth=ZENDESK_AUTH)
         comments = []
 
         for d in resp.json()['comments']:
-            if ZendeskTicketComment.query.filter_by(zendesk_id=d['id']).first():
+            if TicketComment.query.filter_by(zendesk_id=d['id']).first():
                 pass
 
-            ztc = ZendeskTicketComment(
+            ztc = TicketComment(
                 zendesk_id=int(d['id']),
                 created=datetime.strptime(d['created_at'], '%Y-%m-%dT%H:%M:%SZ'),
                 body=d['body'],

@@ -5,29 +5,59 @@ from flask import Flask
 from flask_login import current_user, LoginManager, UserMixin
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf import FlaskForm
+import sqlalchemy
+from sqlalchemy.schema import CreateSchema, DropSchema
 from wtforms import StringField
 from wtforms.validators import Required
+
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql+psycopg2://eric:@localhost/pipet'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.secret_key = '123'
+app.secret_key = os.environ.get('FLASK_SECRET_KEY')
 
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
 db = SQLAlchemy(app)
 
-from app.zendesk import zendesk
-app.register_blueprint(zendesk, url_prefix='/zendesk')
+schemas = []
+tables = []
+
+import app.zendesk as zendesk_blueprint
+app.register_blueprint(zendesk_blueprint.app, url_prefix='/zendesk')
+schemas.append(zendesk_blueprint.models.SCHEMANAME)
+for name in zendesk_blueprint.models.TABLES:
+    tables.append(zendesk_blueprint.models.TABLES.get(name))
+
+
+import app.stripe as stripe_blueprint
+app.register_blueprint(stripe_blueprint.stripe, url_prefix='/stripe')
+schemas.append(stripe_blueprint.models.SCHEMANAME)
+for name in stripe_blueprint.models.TABLES:
+    tables.append(stripe_blueprint.models.TABLES.get(name))
+
+
+def drop_schema():
+    try:
+        for schema in app.blueprints:
+            db.session.execute(DropSchema(schema))
+    except sqlalchemy.exc.ProgrammingError:
+        db.session.rollback()
+
+
+def create_schema():
+    for schema in app.blueprints:
+        db.session.execute(CreateSchema(schema))
+    db.session.commit()
 
 
 class User(UserMixin, db.Model):
-	id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True)
 
 
 class LoginForm(FlaskForm):
-	name = StringField(validators=[Required()])
+    name = StringField(validators=[Required()])
 
 
 @app.route('/')
@@ -37,7 +67,7 @@ def index():
 
 @app.route('/login', methods=('GET', 'POST'))
 def login():
-	form = LoginForm()
-	if form.validate_on_submit():
-		return redirect(request.args.get("next") or url_for("index"))
-	return "login page"
+    form = LoginForm()
+    if form.validate_on_submit():
+        return redirect(request.args.get("next") or url_for("index"))
+    return "login page"
