@@ -6,7 +6,7 @@ from flask_login import login_required
 import requests
 
 from app import db, login_manager
-from app.zendesk.models import *
+from app.zendesk.models import Zendesk, ZendeskGroup, ZendeskTicket, ZendeskTicketComment, ZendeskUser
 
 
 zendesk = Blueprint('zendesk', __name__, template_folder='templates')
@@ -47,8 +47,8 @@ def index():
     return "Pipet Zendesk"
 
 
-@zendesk.route('/zendesk/install')
-def zendesk_install():
+@zendesk.route('/activate')
+def activate():
     webhook_url = os.environ.get('PIPET_DOMAIN') + url_for('zendesk_hook')
 
     z = Zendesk()
@@ -58,8 +58,8 @@ def zendesk_install():
     return redirect(url_for('index'))
 
 
-@zendesk.route('/zendesk/uninstall')
-def zendesk_uninstall():
+@zendesk.route('/deactivate')
+def deactivate():
     request_url = urlparse(request.url)
     webhook_url = request_url.scheme + '://' + request_url.netloc + url_for('zendesk_hook')
 
@@ -71,9 +71,9 @@ def zendesk_uninstall():
     return redirect(url_for('index'))
 
 
-@zendesk.route("/zendesk/hook", methods=['POST'])
+@zendesk.route("/hook", methods=['POST'])
 @requires_auth
-def zendesk_hook():
+def hook():
     ticket_id = request.get_json()['id']
     ticket = ZendeskTicket.query.filter_by(zendesk_id=ticket_id).first()
     if not ticket:
@@ -81,5 +81,4 @@ def zendesk_hook():
     ticket.fetch_and_update()
     db.session.add(ticket)
     db.sesion.add(ticket.fetch_comments())
-
     return ('', 204)
