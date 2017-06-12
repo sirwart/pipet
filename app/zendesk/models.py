@@ -104,9 +104,9 @@ class TicketComment(Base):
     created_at = Column(DateTime)
     author_id = Column(Integer, ForeignKey('user.id'))
     via = Column(JSONB)
-    metadata = Column(JSONB)
+    meta = Column(JSONB, name='metadata')
     ticket_id = Column(Integer, ForeignKey('ticket.id'))
-    
+
     # attachments
 
     ticket = relationship('Ticket', backref=backref('comments', lazy='dynamic'))

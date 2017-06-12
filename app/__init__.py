@@ -70,23 +70,18 @@ def login():
 
 
 # Setup Scripts
-def create_schema():
+def create_all():
     for schema in app.blueprints:
         db.session.execute(CreateSchema(schema))
     db.session.commit()
 
+    for table in tables:
+        table.metadata.create_all(db.engine)
 
-def drop_schema():
+def drop_all():
     for schema in app.blueprints:
         db.session.execute(DropSchema(schema))
     db.session.commit()
 
-
-def create_tables():
-    for table in tables:
-        table.metadata.create_all(db.engine)
-
-
-def drop_tables():
     for table in tables:
         table.metadata.drop_all(db.engine)
