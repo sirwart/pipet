@@ -16,6 +16,11 @@ class Base(object):
         return camel_to_snake_case(cls.__name__)
 
 
+class Account(Base):
+    id = Column(Integer, primary_key=True)
+    api_key = Column(Text)
+
+
 class BalanceTransaction(Base):
     __tablename__ = 'balance_transactions'
 
@@ -46,6 +51,7 @@ class BalanceTransactionFeeDetail(Base):
 
 class Charge(Base):
     __tablename__ = 'charges'
+    
     id = Column(Text, primary_key=True)
     amount = Column(Integer)
     amount_refunded = Column(Integer)
@@ -53,7 +59,3 @@ class Charge(Base):
     balance_transaction_id = Column(Text, ForeignKey('balance_transactions.id'))
     captured = Column(Boolean)
     created = Column(DateTime)
-
-
-def create_all():
-    BalanceTransaction.metadata.create_all(db.engine)

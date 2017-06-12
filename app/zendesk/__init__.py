@@ -7,7 +7,7 @@ import requests
 
 from app import db, login_manager
 from app.zendesk.models import (
-    Client,
+    Account,
     Group,
     Ticket,
     TicketComment,
@@ -56,10 +56,8 @@ def index():
 
 @app.route('/activate')
 def activate():
-    webhook_url = os.environ.get('PIPET_DOMAIN') + url_for('zendesk_hook')
-
-    z = Zendesk()
-    z.create_target(webhook_url)
+    z = Account()
+    z.create_target()
     z.create_trigger()
     db.session.add(z)
     return redirect(url_for('index'))
@@ -67,14 +65,10 @@ def activate():
 
 @app.route('/deactivate')
 def deactivate():
-    request_url = urlparse(request.url)
-    webhook_url = request_url.scheme + '://' + request_url.netloc + url_for('zendesk_hook')
-
-    z = Zendesk.query.first()
+    z = Account.query.filter(user=current_user)
     z.destroy_target()
     z.destroy_trigger()
     db.session.add(z)
-
     return redirect(url_for('index'))
 
 
@@ -82,10 +76,9 @@ def deactivate():
 @requires_auth
 def hook():
     ticket_id = request.get_json()['id']
-    ticket = ZendeskTicket.query.filter_by(zendesk_id=ticket_id).first()
+    ticket = Ticket.query.get(ticket_id)
     if not ticket:
-        ticket = ZendeskTicket(zendesk_id=ticket_id)
-    ticket.fetch_and_update()
-    db.session.add(ticket)
-    db.sesion.add(ticket.fetch_comments())
+        ticket = Ticket(id=ticket_id)
+    db.session.add(ticket.update())
+    db.sesion.add(ticket.update_comments())
     return ('', 204)
