@@ -9,13 +9,13 @@ from sqlalchemy.schema import MetaData, ForeignKey
 from sqlalchemy.ext.declarative import as_declarative, declared_attr
 from sqlalchemy.types import Boolean, Text, Integer, DateTime
 
-from app import db
+from pipet.models import Workspace
 
 SCHEMANAME = 'zendesk'
-TABLES = {}
+ZENDESK_MODELS = {}
 
 
-@as_declarative(metadata=MetaData(schema=SCHEMANAME), class_registry=TABLES)
+@as_declarative(metadata=MetaData(schema=SCHEMANAME), class_registry=ZENDESK_MODELS)
 class Base(object):
     @declared_attr
     def __tablename__(cls):
@@ -39,6 +39,14 @@ class Account(Base):
     api_key = Column(Text)
     trigger_id = Column(Integer)
     target_id = Column(Integer)
+    workspace_id = Column(Integer, ForeignKey('public.workspace.id'))
+
+    # workspace = relationship('Workspace', backref=backref('zendesk_account', lazy='dynamic'))
+
+    def __init__(self, subdomain, admin_email, api_key):
+        self.subdomain = subdomain
+        self.admin_email = admin_email
+        self.api_key = api_key
 
     @property
     def api_base_url(self):

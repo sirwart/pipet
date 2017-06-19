@@ -2,26 +2,26 @@ from functools import wraps
 import os
 
 from flask import Blueprint, redirect, request, Response, render_template, url_for
-from flask_login import login_required
+from flask_login import current_user, login_required
+from flask_wtf import FlaskForm
 import requests
+from wtforms import StringField, validators
+from wtforms.fields.html5 import EmailField
 
-from app import db, login_manager
-from app.zendesk.models import (
+from pipet import db
+from .models import (
+    SCHEMANAME,
+    ZENDESK_MODELS,
     Account,
     Group,
     Ticket,
     TicketComment,
     User,
-    SCHEMANAME
 )
 
 
 app = Blueprint(SCHEMANAME, __name__, template_folder='templates')
 
-ZENDESK_EMAIL = os.environ.get('ZENDESK_EMAIL')
-ZENDESK_API_KEY = os.environ.get('ZENDESK_API_KEY')
-ZENDESK_BASE_URL = 'https://{subdomain}.zendesk.com/api/v2'.format(subdomain=os.environ.get('ZENDESK_SUBDOMAIN'))
-ZENDESK_AUTH = (ZENDESK_EMAIL + '/token', ZENDESK_API_KEY)
 
 def check_auth(username, password):
     """This function is called to check if a username /
@@ -48,19 +48,33 @@ def requires_auth(f):
     return decorated
 
 
+class AccountForm(FlaskForm):
+    subdomain = StringField('Subdomain', validators=[validators.DataRequired()])
+    email = EmailField('Admin Email', validators=[validators.DataRequired()])
+    api_key = StringField('API Key', validators=[validators.DataRequired()])
+
+
 @app.route('/')
 @login_required
 def index():
-    return "Pipet Zendesk"
+    return "Zendesk Pipet"
 
 
 @app.route('/activate')
 def activate():
-    z = Account()
-    z.create_target()
-    z.create_trigger()
-    db.session.add(z)
-    return redirect(url_for('index'))
+    form = AccountForm()
+    if form.validate_on_submit():
+        account = Account(
+            subdomain=form.subdomain.data,
+            admin_email=form.admin_email.data,
+            api_key=form.api_key.data,
+            workspace_id=current_user.id)
+        account.create_target()
+        account.create_trigger()
+        db.session.add(account)
+        db.session.commit()
+        return redirect(url_for('index'))
+    return render_template('activate.html', form=form)
 
 
 @app.route('/deactivate')
