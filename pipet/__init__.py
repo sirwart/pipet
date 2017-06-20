@@ -4,15 +4,18 @@ import os
 from flask import Flask, redirect, render_template, request, url_for
 from flask_sqlalchemy import SQLAlchemy
 import sqlalchemy
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.schema import CreateSchema, DropSchema
 
 from pipet.models import Workspace
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql+psycopg2://eric:@localhost/pipet'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.secret_key = os.environ.get('FLASK_SECRET_KEY')
-db = SQLAlchemy(app)
+
+engine = create_engine('postgresql+psycopg2://eric:@localhost/pipet')
+session = sessionmaker(bind=engine)()
 
 schemas = []
 tables = []
@@ -49,19 +52,19 @@ def create_all():
     for name in TABLES:
         if name == '_sa_module_registry':
             continue
-        TABLES[name].metadata.create_all(db.engine)
+        TABLES[name].metadata.create_all(engine)
 
     try:
         for schema in app.blueprints:
-            db.session.execute(CreateSchema(schema))
-        db.session.commit()
+            session.execute(CreateSchema(schema))
+        session.commit()
     except sqlalchemy.exc.ProgrammingError as e:
         print(e)
         pass
 
     for table in tables:
         try:
-            table.metadata.create_all(db.engine)
+            table.metadata.create_all(engine)
         except sqlalchemy.exc.ProgrammingError as e:
             print(e)
             pass
@@ -70,10 +73,10 @@ def create_all():
 
 def drop_all():
     for table in tables:
-        table.metadata.drop_all(db.engine)
+        table.metadata.drop_all(engine)
 
     for schema in app.blueprints:
-        db.session.execute(DropSchema(schema))
-    db.session.commit()
+        session.execute(DropSchema(schema))
+    session.commit()
 
-    db.drop_all()
+    drop_all()

@@ -25,7 +25,7 @@ from .models import (
     SubscriptionItem,
     Transfer
 )
-from pipet import db
+from pipet import session
 
 STRIPE_API_KEY_URL = "https://dashboard.stripe.com/account/apikeys"
 STRIPE_WEBHOOOK_URL = "https://dashboard.stripe.com/account/webhooks"
@@ -61,7 +61,7 @@ def hook():
     if obj_type in tablenames:
         model = tablenames[obj_type]
         event_type = data['type'].split('.')
-        i = db.session.query(model).get(obj_json['id'])
+        i = session.query(model).get(obj_json['id'])
 
         if event_type[-1] == 'deleted':
             i.delete()
@@ -70,8 +70,8 @@ def hook():
             i = model()
 
         i.load_json(obj_json)
-        db.session.add(i)
+        session.add(i)
 
-    db.session.commit()
+    session.commit()
     return '', 201
 

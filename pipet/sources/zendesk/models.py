@@ -1,14 +1,17 @@
 from datetime import datetime
+import requests
 import os
 
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from flask import url_for
 from flask_sqlalchemy import camel_to_snake_case
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy import Column
 from sqlalchemy.orm import backref, relationship
 from sqlalchemy.schema import MetaData, ForeignKey
 from sqlalchemy.ext.declarative import as_declarative, declared_attr
 from sqlalchemy.types import Boolean, Text, Integer, DateTime
 
+from pipet import session
 from pipet.models import Workspace
 
 SCHEMANAME = 'zendesk'
@@ -21,15 +24,32 @@ class Base(object):
     def __tablename__(cls):
         return camel_to_snake_case(cls.__name__)
 
+    @classmethod
+    def get_or_create(cls, data):
+        """
+        Args:
+            cls (Group):
+            data (dict): JSON
+        Return:
+            tuple: (object, created)
+        """
+        inst = session.query(cls).get(data['id'])
+        if inst:
+            return inst.load_json(data), False
+
+        inst = cls()
+        return inst.load_json(data), True
+
     def load_json(self, data):
         for field, value in data.items():
             if field in self.__table__._columns.keys():
                 if isinstance(self.__table__._columns.get(field).type, DateTime):
-                    setattr(self, field,datetime.strptime(d['created_at'], '%Y-%m-%dT%H:%M:%SZ'))
+                    setattr(self, field,datetime.strptime(data['created_at'], '%Y-%m-%dT%H:%M:%SZ'))
                 elif isinstance(self.__table__._columns.get(field).type, ARRAY):
                     setattr(self, field, sorted(value))
                 else:
                     setattr(self, field, value)
+        return self
 
 
 class Account(Base):
@@ -37,16 +57,17 @@ class Account(Base):
     subdomain = Column(Text)
     admin_email = Column(Text)
     api_key = Column(Text)
-    trigger_id = Column(Integer)
-    target_id = Column(Integer)
-    workspace_id = Column(Integer, ForeignKey('public.workspace.id'))
+    trigger_id = Column(Text)
+    target_id = Column(Text)
+    workspace_id = Column(Integer)
 
     # workspace = relationship('Workspace', backref=backref('zendesk_account', lazy='dynamic'))
 
-    def __init__(self, subdomain, admin_email, api_key):
+    def __init__(self, subdomain, admin_email, api_key, workspace_id):
         self.subdomain = subdomain
         self.admin_email = admin_email
         self.api_key = api_key
+        self.workspace_id = workspace_id
 
     @property
     def api_base_url(self):
@@ -101,6 +122,46 @@ class Account(Base):
         requests.delete(self.api_base_url + '/triggers/{id}.json'.format(id=self.trigger_id),
             auth=self.auth)
         self.trigger_id = None
+
+    def backfill(self):
+        """Backfill Zendesk data when an account is created.
+        Eventually, this should be a RQ task, but for not, just run from CLI"""
+        start_time = 0
+        results = []
+        while True:
+            resp = requests.get(self.api_base_url +
+                '/incremental/tickets.json?include=users,groups&start_time={start_time}'.format(
+                    start_time=start_time), auth=(self.auth))
+            assert resp.status_code == 200
+            data = resp.json()
+            if data['count'] == 0:
+                break
+
+            start_time = resp.json()['end_time']
+
+            for user_json in data['users']:
+                user, _ = User.get_or_create(user_json)
+                results.append(user)
+
+            for group_json in data['groups']:
+                group, _ = Group.get_or_create(group_json)
+                results.append(group)
+
+            for ticket_json in data['tickets']:
+                if ticket_json['status'] == 'deleted':
+                    continue
+
+                ticket, _ = Ticket.get_or_create(ticket_json)
+                results.append(ticket)
+
+                resp = requests.get(self.api_base_url + \
+                    '/tickets/{id}/comments.json'.format(id=ticket.id),
+                    auth=self.auth)
+                
+                assert resp.status_code == 200
+                results += ticket.update_comments(resp.json()['comments'])
+
+        return results
 
 
 class TicketComment(Base):
@@ -202,43 +263,23 @@ class Ticket(Base):
     account_id = Column(Integer, ForeignKey('account.id'))
     account = relationship('Account', backref=backref('tickets', lazy='dynamic'))
 
-    def update(self):
+    def update(self, extended_json):
         """Updates from API"""
         inst_list = [self]
 
-        d = requests.get(self.account.api_base_url + \
-            '/tickets/{id}.json?include=users,groups'.format(id=self.id),
-            auth=self.account.auth).json()
-        self.load_json(d['ticket'])
+        for user_data in extended_json['users']:
+            user, _ = User.get_or_create(user_data)
+            inst_list.append(user)
 
-        if not User.query.filter(id=self.requester_id).first():
-            requester = User()
-            requester.load_json([x for x in d['users'] if x['id'] == self.requester_id][0])
-            inst_list.append(requester)
-
-        if not User.query.filter(id=self.submitter_id).first():
-            submitter = User()
-            submitter.load_json([x for x in d['users'] if x['id'] == self.submitter_id][0])
-            inst_list.append(submitter)
-
-        if not Group.query.filter(id=self.group_id).first():
-            group = Group()
-            group.load_json([x for x in d['groups'] if x['id'] == self.group_id][0])
+        for group_data in extended_json['groups']:
+            group, _ = Group.get_or_create(group_data)
             inst_list.append(group)
 
         return inst_list
 
-    def update_comments(self):
-        resp = requests.get(self.account.api_base_url + \
-            '/tickets/{id}/comments.json'.format(id=self.id), auth=self.account.auth)
-
+    def update_comments(self, comments_json):
         comments = []
-        for d in resp.json()['comments']:
-            if TicketComment.query.filter_by(id=d['id']).first():
-                pass
-
-            comment = TicketComment()
-            comment.load_json(d)
-            comments.append(comment)
+        for comment_json in comments_json:
+            comments.append(TicketComment.get_or_create(comment_json))
 
         return comments

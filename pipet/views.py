@@ -4,7 +4,7 @@ from flask_wtf import FlaskForm
 from wtforms import PasswordField, StringField, validators
 from wtforms.fields.html5 import EmailField
 
-from pipet import app, db
+from pipet import app, session, engine
 from pipet.models import Workspace
 
 login_manager = LoginManager()
@@ -13,7 +13,7 @@ login_manager.login_view = 'login'
 
 @login_manager.user_loader
 def load_user(workspace_id):
-    return db.session.query(Workspace).get(workspace_id)
+    return session.query(Workspace).get(workspace_id)
 
 
 class SignupForm(FlaskForm):
@@ -36,8 +36,8 @@ def signup():
     form = SignupForm()
     if form.validate_on_submit():
         user = Workspace(form.email.data, form.password.data)
-        db.session.add(user)
-        db.session.commit()
+        session.add(user)
+        session.commit()
         return redirect(url_for("index"))
     return render_template('signup.html', form=form)
 
@@ -46,7 +46,7 @@ def signup():
 def login():
     form = LoginForm()
     if form.validate_on_submit():
-        user = db.session.query(Workspace).filter_by(email=form.email.data).first()
+        user = session.query(Workspace).filter_by(email=form.email.data).first()
         if user.check_password(form.password.data):
             login_user(user)
             return redirect(url_for("index"))

@@ -8,7 +8,7 @@ import requests
 from wtforms import StringField, validators
 from wtforms.fields.html5 import EmailField
 
-from pipet import db
+from pipet import engine, session
 from .models import (
     SCHEMANAME,
     ZENDESK_MODELS,
@@ -50,7 +50,7 @@ def requires_auth(f):
 
 class AccountForm(FlaskForm):
     subdomain = StringField('Subdomain', validators=[validators.DataRequired()])
-    email = EmailField('Admin Email', validators=[validators.DataRequired()])
+    admin_email = EmailField('Admin Email', validators=[validators.DataRequired()])
     api_key = StringField('API Key', validators=[validators.DataRequired()])
 
 
@@ -60,7 +60,8 @@ def index():
     return "Zendesk Pipet"
 
 
-@app.route('/activate')
+@app.route('/activate', methods=['GET', 'POST'])
+@login_required
 def activate():
     form = AccountForm()
     if form.validate_on_submit():
@@ -71,8 +72,8 @@ def activate():
             workspace_id=current_user.id)
         account.create_target()
         account.create_trigger()
-        db.session.add(account)
-        db.session.commit()
+        session.add(account)
+        session.commit()
         return redirect(url_for('index'))
     return render_template('activate.html', form=form)
 
@@ -82,7 +83,7 @@ def deactivate():
     z = Account.query.filter(user=current_user)
     z.destroy_target()
     z.destroy_trigger()
-    db.session.add(z)
+    session.add(z)
     return redirect(url_for('index'))
 
 
@@ -90,9 +91,15 @@ def deactivate():
 @requires_auth
 def hook():
     ticket_id = request.get_json()['id']
-    ticket = Ticket.query.get(ticket_id)
-    if not ticket:
-        ticket = Ticket(id=ticket_id)
-    db.session.add(ticket.update())
-    db.sesion.add(ticket.update_comments())
+    resp = requests.get(current_user.account.api_base_url + \
+        '/tickets/{id}.json?include=users,groups'.format(id=ticket_id),
+        auth=current_user.account.auth)
+    
+    ticket, _ = Ticket.get_or_insert(resp.json()['ticket'])
+    session.add(ticket)
+    session.add_all(ticket.update(resp.json()))
+
+    resp = requests.get(current_user.account.api_base_url + \
+        '/tickets/{id}/comments.json'.format(id=current_user.id), auth=current_user.account.auth)
+    sesion.add_all(ticket.update_comments(resp.json()['comments']))
     return ('', 204)

@@ -40,7 +40,7 @@ class Base(object):
 
 class Account(Base):
     api_key = Column(Text)
-    workspace_id = Column(Integer, ForeignKey('public.workspace.id'))
+    workspace_id = Column(Integer)
 
     # workspace = relationship('Workspace')
 
