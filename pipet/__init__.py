@@ -11,10 +11,9 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 from pipet.models import Workspace
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.secret_key = os.environ.get('FLASK_SECRET_KEY')
 
-engine = create_engine('postgresql+psycopg2://eric:@localhost/pipet')
+engine = create_engine(os.environ.get('SQLACHEMY_URI'))
 session = sessionmaker(bind=engine)()
 
 schemas = []
