@@ -6,4 +6,4 @@ For piping little data into Postgres.
 
 Requires environment variable:
 
-- `PIPET_DOMAIN=ehfeng.ngrok.io python run.py`
+- `source .env flask run`
