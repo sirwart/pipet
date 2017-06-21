@@ -24,6 +24,8 @@ class Base(object):
     def __tablename__(cls):
         return camel_to_snake_case(cls.__name__)
 
+    id = Column(Text, primary_key=True)
+
     @classmethod
     def get_or_create(cls, data):
         """
@@ -33,12 +35,15 @@ class Base(object):
         Return:
             tuple: (object, created)
         """
-        inst = session.query(cls).get(data['id'])
+        inst = session.query(cls).get(str(data['id']))
         if inst:
             return inst.load_json(data), False
 
         inst = cls()
         return inst.load_json(data), True
+
+    def __hash__(self):
+        return hash(self.id)
 
     def load_json(self, data):
         for field, value in data.items():
@@ -47,6 +52,9 @@ class Base(object):
                     setattr(self, field,datetime.strptime(data['created_at'], '%Y-%m-%dT%H:%M:%SZ'))
                 elif isinstance(self.__table__._columns.get(field).type, ARRAY):
                     setattr(self, field, sorted(value))
+                elif isinstance(self.__table__._columns.get(field).type, Text) and \
+                    (self.__table__._columns.get(field).foreign_keys or field == 'id'):
+                    setattr(self, field, str(value))
                 else:
                     setattr(self, field, value)
         return self
@@ -123,16 +131,23 @@ class Account(Base):
             auth=self.auth)
         self.trigger_id = None
 
-    def backfill(self):
+    def backfill(self, start_time=0):
         """Backfill Zendesk data when an account is created.
         Eventually, this should be a RQ task, but for not, just run from CLI"""
-        start_time = 0
-        results = []
+        user_results = []
+        group_results = []
+        ticket_results = []
+        comment_results = []
         while True:
             resp = requests.get(self.api_base_url +
                 '/incremental/tickets.json?include=users,groups&start_time={start_time}'.format(
                     start_time=start_time), auth=(self.auth))
-            assert resp.status_code == 200
+
+            if resp.status_code != 200:
+                print(resp.status_code)
+                print(resp.content)
+                break
+
             data = resp.json()
             if data['count'] == 0:
                 break
@@ -141,40 +156,39 @@ class Account(Base):
 
             for user_json in data['users']:
                 user, _ = User.get_or_create(user_json)
-                results.append(user)
+                user_results.append(user)
 
             for group_json in data['groups']:
                 group, _ = Group.get_or_create(group_json)
-                results.append(group)
+                group_results.append(group)
 
             for ticket_json in data['tickets']:
                 if ticket_json['status'] == 'deleted':
                     continue
 
                 ticket, _ = Ticket.get_or_create(ticket_json)
-                results.append(ticket)
+                ticket_results.append(ticket)
 
                 resp = requests.get(self.api_base_url + \
                     '/tickets/{id}/comments.json'.format(id=ticket.id),
                     auth=self.auth)
                 
                 assert resp.status_code == 200
-                results += ticket.update_comments(resp.json()['comments'])
+                comment_results += ticket.update_comments(resp.json()['comments'])
 
-        return results
+        return user_results, group_results, ticket_results, comment_results
 
 
 class TicketComment(Base):
     """Cannot be deleted (unless ticket is deleted)"""
-    id = Column(Integer, primary_key=True)
     type = Column(Text)
     body = Column(Text)
     public = Column(Boolean)
     created_at = Column(DateTime)
-    author_id = Column(Integer, ForeignKey('user.id'))
+    author_id = Column(Text, ForeignKey('user.id'))
     via = Column(JSONB)
     meta = Column(JSONB, name='metadata')
-    ticket_id = Column(Integer, ForeignKey('ticket.id'))
+    ticket_id = Column(Text, ForeignKey('ticket.id'))
 
     # attachments
 
@@ -183,7 +197,6 @@ class TicketComment(Base):
 
 
 class User(Base):
-    id = Column(Integer, primary_key=True)
     email = Column(Text)
     name = Column(Text)
     active = Column(Boolean)
@@ -221,7 +234,6 @@ class User(Base):
 
 
 class Group(Base):
-    id = Column(Integer, primary_key=True)
     created_at = Column(DateTime)
     deleted = Column(Boolean)
     name = Column(Text)
@@ -231,7 +243,6 @@ class Group(Base):
 
 class Ticket(Base):
     """Can be deleted by admins"""
-    id = Column(Integer, primary_key=True)
     created_at = Column(DateTime)
     updated_at = Column(DateTime)
     external_id = Column(Text)
@@ -241,19 +252,19 @@ class Ticket(Base):
     priority = Column(Text)
     status = Column(Text)
     recipient = Column(Text)
-    requester_id = Column(Integer, ForeignKey('user.id'))
-    submitter_id = Column(Integer, ForeignKey('user.id'))
-    group_id = Column(Integer, ForeignKey('group.id'))
-    collaborator_ids = Column(ARRAY(Integer, dimensions=1))
+    requester_id = Column(Text, ForeignKey('user.id'))
+    submitter_id = Column(Text, ForeignKey('user.id'))
+    group_id = Column(Text, ForeignKey('group.id'))
+    collaborator_ids = Column(ARRAY(Text, dimensions=1))
     has_incidents = Column(Boolean)
     due_at = Column(DateTime)
     tags = Column(ARRAY(Text, dimensions=1))
     via = Column(JSONB)
-    followup_ids = Column(ARRAY(Integer, dimensions=1))
+    followup_ids = Column(ARRAY(Text, dimensions=1))
 
-    # forum_topic_id = Column(Integer, ForeignKey(''))
+    # forum_topic_id = Column(Text, ForeignKey(''))
     # satisfaction_rating = Column(JSONB)
-    # sharing_agreement_ids = Column(ARRAY(Integer, dimensions=1))
+    # sharing_agreement_ids = Column(ARRAY(Text, dimensions=1))
     # custom_fields
     # ticket_form_id
     # branch_id
@@ -280,6 +291,7 @@ class Ticket(Base):
     def update_comments(self, comments_json):
         comments = []
         for comment_json in comments_json:
-            comments.append(TicketComment.get_or_create(comment_json))
+            comment, _ = TicketComment.get_or_create(comment_json)
+            comments.append(comment)
 
         return comments

@@ -33,16 +33,18 @@ class Base(object):
                 elif isinstance(value, dict) and \
                     isinstance(self.__table__._columns.get(field).type, Text) and \
                     self.__table__._columns.get(field).foreign_keys:
-                    setattr(self, field, value['id'])
+                    setattr(self, field, str(value['id']))
+                elif isinstance(self.__table__._columns.get(field).type, Text) and \
+                    field == 'id':
+                    setattr(self, field, str(value))
                 else:
                     setattr(self, field, value)
 
 
 class Account(Base):
+    id = Column(Integer, primary_key=True)
     api_key = Column(Text)
     workspace_id = Column(Integer)
-
-    # workspace = relationship('Workspace')
 
 
 class Source(Base):

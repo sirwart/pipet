@@ -13,7 +13,7 @@ from pipet.models import Workspace
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY')
 
-engine = create_engine(os.environ.get('SQLACHEMY_URI'))
+engine = create_engine(os.environ.get('SQLALCHEMY_URI'))
 session = sessionmaker(bind=engine)()
 
 schemas = []
@@ -26,6 +26,7 @@ tables = []
 
 
 import pipet.sources.zendesk as zendesk_blueprint
+
 app.register_blueprint(zendesk_blueprint.app, url_prefix='/zendesk')
 schemas.append(zendesk_blueprint.models.SCHEMANAME)
 for name in zendesk_blueprint.models.ZENDESK_MODELS:
@@ -35,6 +36,7 @@ for name in zendesk_blueprint.models.ZENDESK_MODELS:
 
 
 import pipet.sources.stripe as stripe_blueprint
+
 app.register_blueprint(stripe_blueprint.stripe, url_prefix='/stripe')
 schemas.append(stripe_blueprint.models.SCHEMANAME)
 for name in stripe_blueprint.models.STRIPE_MODELS:

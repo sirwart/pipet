@@ -70,8 +70,8 @@ def activate():
             admin_email=form.admin_email.data,
             api_key=form.api_key.data,
             workspace_id=current_user.id)
-        account.create_target()
-        account.create_trigger()
+        # account.create_target()
+        # account.create_trigger()
         session.add(account)
         session.commit()
         return redirect(url_for('index'))
