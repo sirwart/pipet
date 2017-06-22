@@ -91,7 +91,7 @@ class Account(Base):
             'type': 'http_target',
             'active': True,
             'target_url': os.environ.get('PIPET_DOMAIN') + url_for('zendesk.hook'),
-            'username': self.subdomain,
+            'username': 'pipet',
             'password': os.environ.get('FLASK_SECRET'),
             'method': 'post',
             'content_type': 'application/json',}}

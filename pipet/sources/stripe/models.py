@@ -7,12 +7,15 @@ from sqlalchemy.ext.declarative import as_declarative, declared_attr
 from sqlalchemy.orm import relationship
 from sqlalchemy.schema import MetaData, ForeignKey
 from sqlalchemy.types import Boolean, Float, Text, Integer, DateTime
+import stripe
 
 from pipet.models import Workspace
 
 SCHEMANAME = 'stripe'
 STRIPE_MODELS = {}
 STRIPE_API_VERSION = '2017-06-05'
+
+stripe.api_key = os.environ.get('STRIPE_API_KEY')
 
 @as_declarative(metadata=MetaData(schema=SCHEMANAME), class_registry=STRIPE_MODELS)
 class Base(object):
@@ -45,6 +48,15 @@ class Account(Base):
     id = Column(Integer, primary_key=True)
     api_key = Column(Text)
     workspace_id = Column(Integer)
+
+    def backfill(self):
+        sources = stripe.Source.list(limit=100)
+        for source in sources.auto_paging_iter():
+            pass
+
+        charges = stripe.Charge.list(limit=100)
+        for charge in charges.auto_paging_iter():
+            pass
 
 
 class Source(Base):
