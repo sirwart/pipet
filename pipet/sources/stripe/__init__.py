@@ -1,7 +1,7 @@
 import os
 
 from flask import Blueprint, redirect, request, Response, render_template, url_for
-import stripe
+# import stripe
 import sqlalchemy
 
 from .models import (

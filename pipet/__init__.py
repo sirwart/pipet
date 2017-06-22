@@ -16,6 +16,13 @@ app.secret_key = os.environ.get('FLASK_SECRET_KEY')
 engine = create_engine(os.environ.get('SQLALCHEMY_URI'))
 session = sessionmaker(bind=engine)()
 
+from rq import Queue
+from redis import Redis
+
+redis_conn = Redis()
+q = Queue(connection=redis_conn)
+
+
 schemas = []
 tables = []
 

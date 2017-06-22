@@ -8,7 +8,7 @@ import requests
 from wtforms import StringField, validators
 from wtforms.fields.html5 import EmailField
 
-from pipet import engine, session
+from pipet import engine, session, q
 from .models import (
     SCHEMANAME,
     ZENDESK_MODELS,
@@ -53,6 +53,12 @@ class AccountForm(FlaskForm):
     admin_email = EmailField('Admin Email', validators=[validators.DataRequired()])
     api_key = StringField('API Key', validators=[validators.DataRequired()])
 
+
+from pipet.sources.zendesk.tasks import test_task
+@app.route('/test')
+def test():
+    job = q.enqueue(test_task)
+    return job.id
 
 @app.route('/')
 @login_required

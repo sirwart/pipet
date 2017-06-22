@@ -172,7 +172,7 @@ class Account(Base):
                 resp = requests.get(self.api_base_url + \
                     '/tickets/{id}/comments.json'.format(id=ticket.id),
                     auth=self.auth)
-                
+
                 assert resp.status_code == 200
                 comment_results += ticket.update_comments(resp.json()['comments'])
 
@@ -209,7 +209,7 @@ class User(Base):
     locale = Column(Text)
     locale_id = Column(Integer)
     moderator = Column(Boolean)
-    notes = Column(Text)    
+    notes = Column(Text)
     phone = Column(Text)
     role = Column(Text)
     tags = Column(ARRAY(Text, dimensions=1))
