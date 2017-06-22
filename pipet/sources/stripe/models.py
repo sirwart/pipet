@@ -15,7 +15,7 @@ SCHEMANAME = 'stripe'
 STRIPE_MODELS = {}
 STRIPE_API_VERSION = '2017-06-05'
 
-stripe.api_key = os.environ.get('STRIPE_API_KEY')
+# stripe.api_key = os.environ.get('STRIPE_API_KEY')
 
 @as_declarative(metadata=MetaData(schema=SCHEMANAME), class_registry=STRIPE_MODELS)
 class Base(object):

@@ -2,6 +2,7 @@ certifi==2017.4.17
 chardet==3.0.3
 click==6.7
 Flask==0.12.2
+Flask-Login==0.4.0
 Flask-SQLAlchemy==2.2
 Flask-WTF==0.14.2
 idna==2.5
@@ -13,6 +14,7 @@ redis==2.10.5
 requests==2.17.3
 rq==0.8.0
 SQLAlchemy==1.1.10
+stripe==1.59.0
 urllib3==1.21.1
 Werkzeug==0.12.2
 WTForms==2.1
