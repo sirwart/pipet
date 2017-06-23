@@ -20,32 +20,7 @@ from .models import (
 )
 
 
-app = Blueprint(SCHEMANAME, __name__, template_folder='templates')
-
-
-def check_auth(username, password):
-    """This function is called to check if a username /
-    password combination is valid.
-    """
-    return username == 'pipet' and password == os.environ.get('FLASK_SECRET')
-
-
-def authenticate():
-    """Sends a 401 response that enables basic auth"""
-    return Response(
-    'Could not verify your access level for that URL.\n'
-    'You have to login with proper credentials', 401,
-    {'WWW-Authenticate': 'Basic realm="Login Required"'})
-
-
-def requires_auth(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        auth = request.authorization
-        if not auth or not check_auth(auth.username, auth.password):
-            return authenticate()
-        return f(*args, **kwargs)
-    return decorated
+zendesk = Blueprint(SCHEMANAME, __name__, template_folder='templates')
 
 
 class AccountForm(FlaskForm):
@@ -55,18 +30,18 @@ class AccountForm(FlaskForm):
 
 
 from pipet.sources.zendesk.tasks import test_task
-@app.route('/test')
+@zendesk.route('/test')
 def test():
     job = q.enqueue(test_task)
     return job.id
 
-@app.route('/')
+@zendesk.route('/')
 @login_required
 def index():
-    return "Zendesk Pipet"
+    return render_template('zendesk/index.html')
 
 
-@app.route('/activate', methods=['GET', 'POST'])
+@zendesk.route('/activate', methods=['GET', 'POST'])
 @login_required
 def activate():
     form = AccountForm()
@@ -81,10 +56,10 @@ def activate():
         session.add(account)
         session.commit()
         return redirect(url_for('index'))
-    return render_template('activate.html', form=form)
+    return render_template('zendesk/activate.html', form=form)
 
 
-@app.route('/deactivate')
+@zendesk.route('/deactivate')
 def deactivate():
     z = Account.query.filter(user=current_user)
     z.destroy_target()
@@ -93,19 +68,29 @@ def deactivate():
     return redirect(url_for('index'))
 
 
-@app.route("/hook", methods=['POST'])
-@requires_auth
+@zendesk.route("/hook", methods=['POST'])
 def hook():
-    ticket_id = request.get_json()['id']
-    resp = requests.get(current_user.account.api_base_url + \
-        '/tickets/{id}.json?include=users,groups'.format(id=ticket_id),
-        auth=current_user.account.auth)
-    
-    ticket, _ = Ticket.get_or_insert(resp.json()['ticket'])
-    session.add(ticket)
-    session.add_all(ticket.update(resp.json()))
+    if not request.authorization:
+        return ('', 401)
 
-    resp = requests.get(current_user.account.api_base_url + \
-        '/tickets/{id}/comments.json'.format(id=current_user.id), auth=current_user.account.auth)
-    sesion.add_all(ticket.update_comments(resp.json()['comments']))
+    account = session.query(Account).filter((Account.subdomain==request.authorization.username) &
+        (Account.api_key == request.authorization.password)).first()
+
+    if not account:
+        return ('', 401)
+
+    ticket_id = request.get_json()['id']
+    resp = requests.get(account.api_base_url + \
+        '/tickets/{id}.json?include=users,groups'.format(id=ticket_id),
+        auth=account.auth)
+
+    ticket, _ = Ticket.create_or_update(resp.json()['ticket'])
+    session.add_all(ticket.update(resp.json()))
+    session.add(ticket)
+
+    # resp = requests.get(account.api_base_url + \
+    #     '/tickets/{id}/comments.json'.format(id=ticket.id), auth=account.auth)
+
+    # session.add_all(ticket.update_comments(resp.json()['comments']))
+    session.commit()
     return ('', 204)

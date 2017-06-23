@@ -8,7 +8,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.schema import CreateSchema, DropSchema
 
-from pipet.models import Workspace
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY')
@@ -34,7 +33,7 @@ tables = []
 
 import pipet.sources.zendesk as zendesk_blueprint
 
-app.register_blueprint(zendesk_blueprint.app, url_prefix='/zendesk')
+app.register_blueprint(zendesk_blueprint.zendesk, url_prefix='/zendesk')
 schemas.append(zendesk_blueprint.models.SCHEMANAME)
 for name in zendesk_blueprint.models.ZENDESK_MODELS:
     if name == '_sa_module_registry':
@@ -76,7 +75,6 @@ def create_all():
         except sqlalchemy.exc.ProgrammingError as e:
             print(e)
             pass
-            
 
 
 def drop_all():

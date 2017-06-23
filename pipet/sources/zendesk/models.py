@@ -27,7 +27,7 @@ class Base(object):
     id = Column(Text, primary_key=True)
 
     @classmethod
-    def get_or_create(cls, data):
+    def create_or_update(cls, data):
         """
         Args:
             cls (Group):
@@ -91,8 +91,8 @@ class Account(Base):
             'type': 'http_target',
             'active': True,
             'target_url': os.environ.get('PIPET_DOMAIN') + url_for('zendesk.hook'),
-            'username': 'pipet',
-            'password': os.environ.get('FLASK_SECRET'),
+            'username': self.subdomain,
+            'password': self.api_key,
             'method': 'post',
             'content_type': 'application/json',}}
         resp = requests.post(self.api_base_url + '/targets.json',
@@ -144,8 +144,6 @@ class Account(Base):
                     start_time=start_time), auth=(self.auth))
 
             if resp.status_code != 200:
-                print(resp.status_code)
-                print(resp.content)
                 break
 
             data = resp.json()
@@ -155,18 +153,18 @@ class Account(Base):
             start_time = resp.json()['end_time']
 
             for user_json in data['users']:
-                user, _ = User.get_or_create(user_json)
+                user, _ = User.create_or_update(user_json)
                 user_results.append(user)
 
             for group_json in data['groups']:
-                group, _ = Group.get_or_create(group_json)
+                group, _ = Group.create_or_update(group_json)
                 group_results.append(group)
 
             for ticket_json in data['tickets']:
                 if ticket_json['status'] == 'deleted':
                     continue
 
-                ticket, _ = Ticket.get_or_create(ticket_json)
+                ticket, _ = Ticket.create_or_update(ticket_json)
                 ticket_results.append(ticket)
 
                 resp = requests.get(self.api_base_url + \
@@ -185,10 +183,10 @@ class TicketComment(Base):
     body = Column(Text)
     public = Column(Boolean)
     created_at = Column(DateTime)
-    author_id = Column(Text, ForeignKey('user.id'))
+    author_id = Column(Text, ForeignKey('user.id', deferrable=True, initially='DEFERRED'))
     via = Column(JSONB)
     meta = Column(JSONB, name='metadata')
-    ticket_id = Column(Text, ForeignKey('ticket.id'))
+    ticket_id = Column(Text, ForeignKey('ticket.id', deferrable=True, initially='DEFERRED'))
 
     # attachments
 
@@ -252,9 +250,9 @@ class Ticket(Base):
     priority = Column(Text)
     status = Column(Text)
     recipient = Column(Text)
-    requester_id = Column(Text, ForeignKey('user.id'))
-    submitter_id = Column(Text, ForeignKey('user.id'))
-    group_id = Column(Text, ForeignKey('group.id'))
+    requester_id = Column(Text, ForeignKey('user.id', deferrable=True, initially='DEFERRED'))
+    submitter_id = Column(Text, ForeignKey('user.id', deferrable=True, initially='DEFERRED'))
+    group_id = Column(Text, ForeignKey('group.id', deferrable=True, initially='DEFERRED'))
     collaborator_ids = Column(ARRAY(Text, dimensions=1))
     has_incidents = Column(Boolean)
     due_at = Column(DateTime)
@@ -262,7 +260,7 @@ class Ticket(Base):
     via = Column(JSONB)
     followup_ids = Column(ARRAY(Text, dimensions=1))
 
-    # forum_topic_id = Column(Text, ForeignKey(''))
+    # forum_topic_id = Column(Text, ForeignKey('')), deferrable=True, initially='DEFERRED'
     # satisfaction_rating = Column(JSONB)
     # sharing_agreement_ids = Column(ARRAY(Text, dimensions=1))
     # custom_fields
@@ -271,7 +269,7 @@ class Ticket(Base):
     # allow_channelback
     # is_public
 
-    account_id = Column(Integer, ForeignKey('account.id'))
+    account_id = Column(Integer, ForeignKey('account.id', deferrable=True, initially='DEFERRED'))
     account = relationship('Account', backref=backref('tickets', lazy='dynamic'))
 
     def update(self, extended_json):
@@ -279,11 +277,11 @@ class Ticket(Base):
         inst_list = [self]
 
         for user_data in extended_json['users']:
-            user, _ = User.get_or_create(user_data)
+            user, _ = User.create_or_update(user_data)
             inst_list.append(user)
 
         for group_data in extended_json['groups']:
-            group, _ = Group.get_or_create(group_data)
+            group, _ = Group.create_or_update(group_data)
             inst_list.append(group)
 
         return inst_list
@@ -291,7 +289,7 @@ class Ticket(Base):
     def update_comments(self, comments_json):
         comments = []
         for comment_json in comments_json:
-            comment, _ = TicketComment.get_or_create(comment_json)
+            comment, _ = TicketComment.create_or_update(comment_json)
             comments.append(comment)
 
         return comments
