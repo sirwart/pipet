@@ -7,7 +7,7 @@ from sqlalchemy.ext.declarative import as_declarative, declared_attr
 from sqlalchemy.orm import relationship
 from sqlalchemy.schema import MetaData, ForeignKey
 from sqlalchemy.types import Boolean, Float, Text, Integer, DateTime
-import stripe
+# import stripe
 
 from pipet.models import Workspace
 
@@ -99,7 +99,6 @@ class Charge(Base):
     currency = Column(Text)
     customer = Column(Text, ForeignKey('customer.id'))
     description = Column(Text)
-    dispute = Column(Text, ForeignKey('dispute.id'))
     failure_code = Column(Text)
     failure_message = Column(Text)
     fraud_details = Column(JSONB)
@@ -300,7 +299,6 @@ class Transfer(Base):
     destination = Column(Text)
     destination_payment = Column(Text)
     stripe_metadata = Column(JSONB, name='metadata')
-    # reversals
     reversed = Column(Boolean)
     source_transaction = Column(Text)
     source_type = Column(Text)

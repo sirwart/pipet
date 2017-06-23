@@ -25,30 +25,38 @@ from .models import (
     SubscriptionItem,
     Transfer
 )
-from pipet import session
+from pipet import engine, q, session
 
 STRIPE_API_KEY_URL = "https://dashboard.stripe.com/account/apikeys"
 STRIPE_WEBHOOOK_URL = "https://dashboard.stripe.com/account/webhooks"
 
-stripe = Blueprint(SCHEMANAME, __name__, template_folder='templates')
+stripe_blueprint = Blueprint(SCHEMANAME, __name__, template_folder='templates')
 
-@stripe.route('/')
+
+from pipet.sources.zendesk.tasks import backfill
+@stripe_blueprint.route('/test')
+def test():
+    job = q.enqueue(backfill)
+    return job.id
+
+
+@stripe_blueprint.route('/')
 def index():
     return 'Stripe Pipet'
 
 
-@stripe.route('/activate')
+@stripe_blueprint.route('/activate')
 def activate():
     """Instructions on getting webhooks set up"""
     return
 
 
-@stripe.route('/deactivate')
+@stripe_blueprint.route('/deactivate')
 def deactivate():
     return
 
 
-@stripe.route('/hook', methods=['POST'])
+@stripe_blueprint.route('/hook', methods=['POST'])
 def hook():
     data = request.get_json()
     assert data['api_version'] == STRIPE_API_VERSION

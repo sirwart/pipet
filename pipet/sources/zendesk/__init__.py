@@ -20,7 +20,7 @@ from .models import (
 )
 
 
-zendesk = Blueprint(SCHEMANAME, __name__, template_folder='templates')
+zendesk_blueprint = Blueprint(SCHEMANAME, __name__, template_folder='templates')
 
 
 class AccountForm(FlaskForm):
@@ -29,19 +29,19 @@ class AccountForm(FlaskForm):
     api_key = StringField('API Key', validators=[validators.DataRequired()])
 
 
-from pipet.sources.zendesk.tasks import test_task
-@zendesk.route('/test')
+from pipet.sources.zendesk.tasks import backfill
+@zendesk_blueprint.route('/test')
 def test():
-    job = q.enqueue(test_task)
+    job = q.enqueue(backfill)
     return job.id
 
-@zendesk.route('/')
+@zendesk_blueprint.route('/')
 @login_required
 def index():
     return render_template('zendesk/index.html')
 
 
-@zendesk.route('/activate', methods=['GET', 'POST'])
+@zendesk_blueprint.route('/activate', methods=['GET', 'POST'])
 @login_required
 def activate():
     form = AccountForm()
@@ -59,7 +59,7 @@ def activate():
     return render_template('zendesk/activate.html', form=form)
 
 
-@zendesk.route('/deactivate')
+@zendesk_blueprint.route('/deactivate')
 def deactivate():
     z = Account.query.filter(user=current_user)
     z.destroy_target()
@@ -68,7 +68,7 @@ def deactivate():
     return redirect(url_for('index'))
 
 
-@zendesk.route("/hook", methods=['POST'])
+@zendesk_blueprint.route("/hook", methods=['POST'])
 def hook():
     if not request.authorization:
         return ('', 401)
