@@ -239,6 +239,21 @@ class Group(Base):
     url = Column(Text)
 
 
+class Organization(Base):
+    external_id = Column(Text)
+    name = Column(Text)
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)
+    domain_names = Column(ARRAY(Text, dimensions=1))
+    details = Column(Text)
+    notes = Column(Text)
+    group_id = Column(Text, ForeignKey('group.id', deferrable=True, initially='DEFERRED'))
+    shared_tickets = Column(Boolean)
+    shared_comments = Column(Boolean)
+    tags = Column(ARRAY(Text, dimensions=1))
+    organization_fields = Column(JSONB)
+
+
 class Ticket(Base):
     """Can be deleted by admins"""
     created_at = Column(DateTime)
