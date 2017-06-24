@@ -34,7 +34,6 @@ from pipet.sources.zendesk.tasks import backfill
 @zendesk_blueprint.route('/test')
 @login_required
 def test():
-    start_time = int(datetime.now().timestamp() - 7 * 24 * 3600)
     job = q.enqueue(backfill, current_user.id, timeout=900)
     return job.id
 
