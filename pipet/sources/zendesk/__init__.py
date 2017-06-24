@@ -1,3 +1,4 @@
+from datetime import datetime
 from functools import wraps
 import os
 
@@ -31,8 +32,10 @@ class AccountForm(FlaskForm):
 
 from pipet.sources.zendesk.tasks import backfill
 @zendesk_blueprint.route('/test')
+@login_required
 def test():
-    job = q.enqueue(backfill)
+    start_time = int(datetime.now().timestamp() - 10000)
+    job = q.enqueue(backfill, current_user.id, start_time)
     return job.id
 
 @zendesk_blueprint.route('/')
