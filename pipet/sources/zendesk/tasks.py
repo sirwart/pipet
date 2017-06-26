@@ -4,13 +4,14 @@ import requests
 from pipet import session
 from pipet.sources.zendesk.models import Account, Group, Organization, Ticket, User
 
-def backfill(account_id, start_time=0):
+def backfill_tickets(account_id, start_time=0):
     account = session.query(Account).get(account_id)
     # 1. backfill tickets, users, and groups
     user_results = []
     group_results = []
     ticket_results = []
     comment_results = []
+
     while True:
         start = datetime.now().timestamp()
         resp = requests.get(account.api_base_url +
@@ -64,5 +65,17 @@ def backfill(account_id, start_time=0):
     session.add_all(group_results)
     session.add_all(ticket_results)
     session.commit()
-    # 2. Backfill comments
-    # 3. Set up targets and triggers
+
+def backfill_ticket_comments(account_id, start_time=0):
+    account = session.query(Account).get(account_id)
+    comments = []
+    tickets = session.query(Ticket).all()
+    for ticket in tickets:
+        resp = requests.get(account.api_base_url + \
+            '/tickets/{id}/comments.json'.format(id=ticket.id),
+            auth=account.auth)
+
+        assert resp.status_code == 200
+        session.add_all(ticket.update_comments(resp.json()['comments']))
+        session.commit()
+

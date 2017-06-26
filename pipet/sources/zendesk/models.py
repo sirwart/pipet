@@ -85,6 +85,20 @@ class Account(Base):
     def auth(self):
         return (self.admin_email + '/token', self.api_key)
 
+    @property
+    def target_exists(self):
+        resp = requests.get(self.api_base_url + '/targets/{id}.json'.format(id=self.target_id))
+        if resp.status_code == 200:
+            return True
+        return False
+
+    @property
+    def trigger_exists(self):
+        resp = requests.get(self.api_base_url + '/triggers/{id}.json'.format(id=self.target_id))
+        if resp.status_code == 200:
+            return True
+        return False
+
     def create_target(self):
         if self.target_id:
             return False
@@ -139,51 +153,6 @@ class Account(Base):
         requests.delete(self.api_base_url + '/triggers/{id}.json'.format(id=self.trigger_id),
             auth=self.auth)
         self.trigger_id = None
-
-    def backfill(self, start_time=0):
-        """Backfill Zendesk data when an account is created.
-        Eventually, this should be a RQ task, but for not, just run from CLI"""
-        user_results = []
-        group_results = []
-        ticket_results = []
-        comment_results = []
-        while True:
-            resp = requests.get(self.api_base_url +
-                '/incremental/tickets.json?include=users,groups&start_time={start_time}'.format(
-                    start_time=start_time), auth=(self.auth))
-
-            if resp.status_code != 200:
-                break
-
-            data = resp.json()
-            if data['count'] == 0:
-                break
-
-            start_time = resp.json()['end_time']
-
-            for user_json in data['users']:
-                user, _ = User.create_or_update(user_json)
-                user_results.append(user)
-
-            for group_json in data['groups']:
-                group, _ = Group.create_or_update(group_json)
-                group_results.append(group)
-
-            for ticket_json in data['tickets']:
-                if ticket_json['status'] == 'deleted':
-                    continue
-
-                ticket, _ = Ticket.create_or_update(ticket_json)
-                ticket_results.append(ticket)
-
-                resp = requests.get(self.api_base_url + \
-                    '/tickets/{id}/comments.json'.format(id=ticket.id),
-                    auth=self.auth)
-
-                assert resp.status_code == 200
-                comment_results += ticket.update_comments(resp.json()['comments'])
-
-        return user_results, group_results, ticket_results, comment_results
 
 
 class TicketComment(Base):

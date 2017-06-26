@@ -33,13 +33,6 @@ STRIPE_WEBHOOOK_URL = "https://dashboard.stripe.com/account/webhooks"
 stripe_blueprint = Blueprint(SCHEMANAME, __name__, template_folder='templates')
 
 
-from pipet.sources.zendesk.tasks import backfill
-@stripe_blueprint.route('/test')
-def test():
-    job = q.enqueue(backfill)
-    return job.id
-
-
 @stripe_blueprint.route('/')
 def index():
     return 'Stripe Pipet'

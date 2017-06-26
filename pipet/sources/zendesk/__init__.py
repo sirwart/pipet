@@ -19,7 +19,7 @@ from pipet.sources.zendesk.models import (
     TicketComment,
     User,
 )
-from pipet.sources.zendesk.tasks import backfill
+from pipet.sources.zendesk.tasks import backfill_ticket_comments, backfill_tickets
 
 
 zendesk_blueprint = Blueprint(SCHEMANAME, __name__, template_folder='templates')
@@ -49,12 +49,15 @@ def activate():
                 admin_email=form.admin_email.data,
                 api_key=form.api_key.data,
                 workspace_id=current_user.id)
-        account.create_target()
-        account.create_trigger()
+        if not account.target_exists:
+            account.create_target()
+        if not account.trigger_exists:
+            account.create_trigger()
         session.add(account)
         session.commit()
-        job = q.enqueue(backfill, current_user.id, timeout=900)
-        return redirect(url_for('index'))
+        ticket_job = q.enqueue(backfill_tickets, current_user.id, timeout=900)
+        q.enqueue(backfill_ticket_comments, current_user.id, depends_on=ticket_job, timeout=1800)
+        return redirect(url_for('zendesk.index'))
     
     if account:
         form.subdomain.data = account.subdomain
