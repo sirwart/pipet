@@ -67,9 +67,9 @@ class Account(Base):
     api_key = Column(Text)
     trigger_id = Column(Text)
     target_id = Column(Text)
-    workspace_id = Column(Integer)
+    workspace_id = Column(Integer, ForeignKey(Workspace.id), unique=True)
 
-    # workspace = relationship('Workspace', backref=backref('zendesk_account', lazy='dynamic'))
+    workspace = relationship(Workspace, backref=backref('zendesk_account', lazy='dynamic'))
 
     def __init__(self, subdomain, admin_email, api_key, workspace_id):
         self.subdomain = subdomain
@@ -86,20 +86,28 @@ class Account(Base):
         return (self.admin_email + '/token', self.api_key)
 
     def create_target(self):
+        if self.target_id:
+            return False
+
         target_payload = {'target': {
             'title': 'Pipet',
             'type': 'http_target',
             'active': True,
-            'target_url': os.environ.get('PIPET_DOMAIN') + url_for('zendesk.hook'),
+            'target_url': 'https://' + os.environ.get('PIPET_DOMAIN') + url_for('zendesk.hook'),
             'username': self.subdomain,
             'password': self.api_key,
             'method': 'post',
             'content_type': 'application/json',}}
         resp = requests.post(self.api_base_url + '/targets.json',
             auth=self.auth, json=target_payload)
+        assert resp.status_code == 201
         self.target_id = resp.json()['target']['id']
+        return True
 
     def create_trigger(self):
+        if self.trigger_id:
+            return False
+
         trigger_payload = {'trigger': {
             'actions': [{
                 'field': 'notification_target',
@@ -120,6 +128,7 @@ class Account(Base):
         resp = requests.post(self.api_base_url + '/triggers.json',
             auth=self.auth, json=trigger_payload)
         self.trigger_id = resp.json()['trigger']['id']
+        return True
 
     def destroy_target(self):
         requests.delete(self.api_base_url + '/targets/{id}.json'.format(id=self.target_id),
@@ -283,9 +292,6 @@ class Ticket(Base):
     # branch_id
     # allow_channelback
     # is_public
-
-    account_id = Column(Integer, ForeignKey('account.id', deferrable=True, initially='DEFERRED'))
-    account = relationship('Account', backref=backref('tickets', lazy='dynamic'))
 
     def update(self, extended_json):
         """Updates from API"""

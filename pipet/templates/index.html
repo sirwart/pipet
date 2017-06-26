@@ -4,6 +4,15 @@
 	<title>Pipet</title>
 </head>
 <body>
-<a href="{{ url_for('zendesk.index') }}">Zendesk</a>
+{% if current_user.is_authenticated %}
+<div>
+	<a href="{{ url_for('zendesk.index') }}">Zendesk</a>
+</div>
+<div>
+	<a href="{{ url_for('logout') }}">Logout</a>
+</div>
+{% else %}
+	<a href="{{ url_for('login') }}">Login</a>
+{% endif %}
 </body>
 </html>

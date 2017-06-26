@@ -10,7 +10,7 @@ from wtforms import StringField, validators
 from wtforms.fields.html5 import EmailField
 
 from pipet import engine, session, q
-from .models import (
+from pipet.sources.zendesk.models import (
     SCHEMANAME,
     ZENDESK_MODELS,
     Account,
@@ -19,6 +19,7 @@ from .models import (
     TicketComment,
     User,
 )
+from pipet.sources.zendesk.tasks import backfill
 
 
 zendesk_blueprint = Blueprint(SCHEMANAME, __name__, template_folder='templates')
@@ -30,13 +31,6 @@ class AccountForm(FlaskForm):
     api_key = StringField('API Key', validators=[validators.DataRequired()])
 
 
-from pipet.sources.zendesk.tasks import backfill
-@zendesk_blueprint.route('/test')
-@login_required
-def test():
-    job = q.enqueue(backfill, current_user.id, timeout=900)
-    return job.id
-
 @zendesk_blueprint.route('/')
 @login_required
 def index():
@@ -47,26 +41,36 @@ def index():
 @login_required
 def activate():
     form = AccountForm()
+    account = session.query(Account).filter(Account.workspace == current_user).first()
     if form.validate_on_submit():
-        account = Account(
-            subdomain=form.subdomain.data,
-            admin_email=form.admin_email.data,
-            api_key=form.api_key.data,
-            workspace_id=current_user.id)
-        # account.create_target()
-        # account.create_trigger()
+        if not account:
+            account = Account(
+                subdomain=form.subdomain.data,
+                admin_email=form.admin_email.data,
+                api_key=form.api_key.data,
+                workspace_id=current_user.id)
+        account.create_target()
+        account.create_trigger()
         session.add(account)
         session.commit()
+        job = q.enqueue(backfill, current_user.id, timeout=900)
         return redirect(url_for('index'))
+    
+    if account:
+        form.subdomain.data = account.subdomain
+        form.admin_email.data = account.admin_email
+        form.api_key.data = account.api_key
+
     return render_template('zendesk/activate.html', form=form)
 
 
 @zendesk_blueprint.route('/deactivate')
 def deactivate():
-    z = Account.query.filter(user=current_user)
-    z.destroy_target()
-    z.destroy_trigger()
-    session.add(z)
+    account = session.query(Account).filter(Account.workspace == current_user).first()
+    account.destroy_target()
+    account.destroy_trigger()
+    session.add(account)
+    session.commit()
     return redirect(url_for('index'))
 
 
@@ -75,7 +79,7 @@ def hook():
     if not request.authorization:
         return ('', 401)
 
-    account = session.query(Account).filter((Account.subdomain==request.authorization.username) &
+    account = session.query(Account).filter((Account.subdomain == request.authorization.username) &
         (Account.api_key == request.authorization.password)).first()
 
     if not account:
