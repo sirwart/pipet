@@ -27,7 +27,7 @@ class Base(object):
     id = Column(BigInteger, primary_key=True)
 
     @classmethod
-    def create_or_update(cls, data):
+    def create_or_update(cls, data, account):
         """
         Args:
             cls (Group):
@@ -40,6 +40,7 @@ class Base(object):
             return inst.load_json(data), False
 
         inst = cls()
+        inst.account = account
         return inst.load_json(data), True
 
     def __hash__(self):
@@ -193,6 +194,9 @@ class User(Base):
     updated_at = Column(DateTime)
     verified = Column(Boolean)
 
+    account_id = Column(Integer, ForeignKey('account.id', deferrable=True, initially='DEFERRED'))
+    account = relationship(Account, backref=backref('users', lazy='dynamic'))
+
     # only_private_comments = Column(Boolean)
     # url = Column(Text)
     # two_factor_auth_enabled = Column(Boolean)
@@ -208,6 +212,10 @@ class User(Base):
     # photo
     # user_fields
 
+    def fetch(self):
+        return requests.get(self.account.api_base_url + '/users/{id}.json'.format(id=self.id),
+            auth=self.account.auth)
+
 
 class Group(Base):
     created_at = Column(DateTime)
@@ -215,6 +223,13 @@ class Group(Base):
     name = Column(Text)
     updated_at = Column(DateTime)
     url = Column(Text)
+
+    account_id = Column(Integer, ForeignKey('account.id', deferrable=True, initially='DEFERRED'))
+    account = relationship(Account, backref=backref('groups', lazy='dynamic'))
+
+    def fetch(self):
+        return requests.get(self.account.api_base_url + '/groups/{id}.json'.format(id=self.id),
+            auth=self.account.auth)
 
 
 class Organization(Base):
@@ -230,6 +245,13 @@ class Organization(Base):
     shared_comments = Column(Boolean)
     tags = Column(ARRAY(Text, dimensions=1))
     organization_fields = Column(JSONB)
+
+    account_id = Column(Integer, ForeignKey('account.id', deferrable=True, initially='DEFERRED'))
+    account = relationship(Account, backref=backref('organizations', lazy='dynamic'))
+
+    def fetch(self):
+        return requests.get(self.account.api_base_url + '/organizations/{id}.json'.format(id=self.id),
+            auth=self.account.auth)
 
 
 class Ticket(Base):
@@ -253,6 +275,9 @@ class Ticket(Base):
     via = Column(JSONB)
     followup_ids = Column(ARRAY(BigInteger, dimensions=1))
 
+    account_id = Column(Integer, ForeignKey('account.id', deferrable=True, initially='DEFERRED'))
+    account = relationship(Account, backref=backref('tickets', lazy='dynamic'))
+
     # forum_topic_id = Column(BigInteger, ForeignKey('')), deferrable=True, initially='DEFERRED'
     # satisfaction_rating = Column(JSONB)
     # sharing_agreement_ids = Column(ARRAY(BigInteger, dimensions=1))
@@ -261,6 +286,10 @@ class Ticket(Base):
     # branch_id
     # allow_channelback
     # is_public
+
+    def fetch(self):
+        return requests.get(self.account.api_base_url + '/tickets/{id}.json'.format(id=self.id),
+            auth=self.account.auth)
 
     def update(self, extended_json):
         """Updates from API"""
@@ -279,7 +308,15 @@ class Ticket(Base):
     def update_comments(self, comments_json):
         comments = []
         for comment_json in comments_json:
-            comment, _ = TicketComment.create_or_update(comment_json)
+            if not session.query(User).get(comment_json['author_id']):
+                user = User()
+                user.id = comment_json['author_id']
+                user.account = self.account
+                user_resp = user.fetch()
+                user.load_json(user_resp.json())
+                comments.append(user)
+
+            comment, _ = TicketComment.create_or_update(comment_json, self.account)
             comments.append(comment)
 
         return comments

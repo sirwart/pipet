@@ -34,7 +34,7 @@ def backfill_tickets(account_id, start_time=0):
             elif user_json['id'] in [u.id for u in user_results]:
                 continue
 
-            user, _ = User.create_or_update(user_json)
+            user, _ = User.create_or_update(user_json, account)
             user_results.append(user)
 
         for group_json in data['groups']:
@@ -43,7 +43,7 @@ def backfill_tickets(account_id, start_time=0):
             elif group_json['id'] in [g.id for g in group_results]:
                 continue
 
-            group, _ = Group.create_or_update(group_json)
+            group, _ = Group.create_or_update(group_json, account)
             group_results.append(group)
 
         for org_json in data['organizations']:
@@ -58,7 +58,7 @@ def backfill_tickets(account_id, start_time=0):
             elif session.query(Ticket).get(ticket_json['id']):
                 continue
 
-            ticket, _ = Ticket.create_or_update(ticket_json)
+            ticket, _ = Ticket.create_or_update(ticket_json, account)
             ticket_results.append(ticket)
 
     session.add_all(user_results)
@@ -74,8 +74,7 @@ def backfill_ticket_comments(account_id, start_time=0):
         resp = requests.get(account.api_base_url + \
             '/tickets/{id}/comments.json'.format(id=ticket.id),
             auth=account.auth)
-
-        assert resp.status_code == 200
-        session.add_all(ticket.update_comments(resp.json()['comments']))
+        comments = ticket.update_comments(resp.json()['comments'])
+        session.add_all(comments)
         session.commit()
 

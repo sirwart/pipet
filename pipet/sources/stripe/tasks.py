@@ -1,6 +1,11 @@
+import stripe
+import requests
+
+from pipet import session
 from pipet.sources.stripe.models import Account
 
 def backfill_coupons(account_id):
+    account = session.query(Account).get(account_id)
     print(account_id)
     # Coupon (list)
     # BalanceTransaction (list) + Source
