@@ -1,10 +1,15 @@
 import os
 
 from flask import Blueprint, redirect, request, Response, render_template, url_for
-# import stripe
-import sqlalchemy
+import stripe
 
-from .models import (
+from flask_wtf import FlaskForm
+import requests
+import sqlalchemy
+from wtforms import StringField, validators
+from wtforms.fields.html5 import EmailField
+
+from pipet.sources.stripe.models import (
     SCHEMANAME,
     STRIPE_API_VERSION,
     STRIPE_MODELS,
@@ -25,6 +30,7 @@ from .models import (
     SubscriptionItem,
     Transfer
 )
+from pipet.sources.stripe.tasks import backfill_coupons
 from pipet import engine, q, session
 
 STRIPE_API_KEY_URL = "https://dashboard.stripe.com/account/apikeys"
@@ -32,6 +38,10 @@ STRIPE_WEBHOOOK_URL = "https://dashboard.stripe.com/account/webhooks"
 
 stripe_blueprint = Blueprint(SCHEMANAME, __name__, template_folder='templates')
 
+@stripe_blueprint.route('/test')
+def test():
+    backfill_coupons(1)
+    return 'hi'
 
 @stripe_blueprint.route('/')
 def index():

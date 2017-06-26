@@ -194,6 +194,9 @@ class Coupon(Base):
     times_redeemed = Column(Integer)
     valid = Column(Boolean)
 
+    @staticmethod
+    def backfill(account_id):
+        print(account_id)
 
 class Discount(Base):
     coupon = Column(Text, ForeignKey('coupon.id'))
