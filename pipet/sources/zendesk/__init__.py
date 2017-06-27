@@ -22,6 +22,12 @@ from pipet.sources.zendesk.tasks import backfill_tickets
 
 zendesk_blueprint = Blueprint(SCHEMANAME, __name__, template_folder='templates')
 
+def backfill(account_id=1):
+    account = session.query(Account).get(account_id)
+    t = Thread(target=backfill_tickets, args=(account.id, ))
+    t.setDaemon(True)
+    t.start()
+
 
 class AccountForm(FlaskForm):
     subdomain = StringField('Subdomain', validators=[validators.DataRequired()])
@@ -54,23 +60,13 @@ def activate():
         session.add(account)
         session.commit()
         return redirect(url_for('zendesk.index'))
-    
+
     if account:
         form.subdomain.data = account.subdomain
         form.admin_email.data = account.admin_email
         form.api_key.data = account.api_key
 
     return render_template('zendesk/activate.html', form=form)
-
-
-@zendesk_blueprint.route('/backfill')
-@login_required
-def backfill():
-    account = session.query(Account).filter(Account.workspace == current_user).first()
-    t = Thread(target=backfill_tickets, args=(account.id, ))
-    t.setDaemon(True)
-    t.start()
-    return redirect(url_for('zendesk.index'))
 
 
 @zendesk_blueprint.route('/deactivate')

@@ -10,3 +10,6 @@ reset-db:
 devserver:
 	export FLASK_DEBUG=true
 	flask run
+
+backfill-zendesk:
+	python -c "from pipet.sources.zendesk import backfill; backfill()"
