@@ -49,8 +49,8 @@ class Base(object):
     def load_json(self, data):
         for field, value in data.items():
             if field in self.__table__._columns.keys():
-                if isinstance(self.__table__._columns.get(field).type, DateTime):
-                    setattr(self, field,datetime.strptime(data['created_at'], '%Y-%m-%dT%H:%M:%SZ'))
+                if isinstance(self.__table__._columns.get(field).type, DateTime) and value:
+                    setattr(self, field, datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ'))
                 elif isinstance(self.__table__._columns.get(field).type, ARRAY):
                     setattr(self, field, sorted(value))
                 elif isinstance(self.__table__._columns.get(field).type, BigInteger) and \
@@ -317,6 +317,7 @@ class Ticket(Base):
                 comments.append(user)
 
             comment, _ = TicketComment.create_or_update(comment_json, self.account)
+            comment.ticket_id = self.id
             comments.append(comment)
 
         return comments

@@ -1,10 +1,14 @@
 from datetime import datetime
 import requests
 
+from sqlalchemy.sql import func
+
 from pipet import session
-from pipet.sources.zendesk.models import Account, Group, Organization, Ticket, User
+from pipet.sources.zendesk.models import Account, Group, Organization, Ticket, TicketComment, User
+
 
 def backfill_tickets(account_id, start_time=0):
+    backfill_start_time = datetime.now()
     account = session.query(Account).get(account_id)
     # 1. backfill tickets, users, and groups
     user_results = []
@@ -66,15 +70,25 @@ def backfill_tickets(account_id, start_time=0):
     session.add_all(ticket_results)
     session.commit()
 
-def backfill_ticket_comments(account_id, start_time=0):
-    account = session.query(Account).get(account_id)
     comments = []
     tickets = session.query(Ticket).all()
+    ticket_comment_processed = 0
+    print('adding comments for %d tickets' % len(tickets))
     for ticket in tickets:
+        ticket_comment_processed += 1
+        print('adding comments for %d / %d tickets' % (ticket_comment_processed, len(tickets)))
+
+        query = session.query(func.max(TicketComment.created_at))
+        max_comments_time = query.filter(TicketComment.ticket_id == ticket.id).group_by(TicketComment.ticket_id).first()
+        if max_comments_time and ticket.updated_at == max_comments_time[0]:
+            continue
+
         resp = requests.get(account.api_base_url + \
             '/tickets/{id}/comments.json'.format(id=ticket.id),
             auth=account.auth)
+        assert resp.status_code == 200
         comments = ticket.update_comments(resp.json()['comments'])
         session.add_all(comments)
         session.commit()
 
+    print('backfill complete, took %d seconds' % int((datetime.now() - backfill_start_time).total_seconds()))

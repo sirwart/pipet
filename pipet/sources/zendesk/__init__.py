@@ -1,6 +1,7 @@
 from datetime import datetime
 from functools import wraps
 import os
+from threading import Thread
 
 from flask import Blueprint, redirect, request, Response, render_template, url_for
 from flask_login import current_user, login_required
@@ -16,7 +17,7 @@ from pipet.sources.zendesk.models import (
     Account,
     Ticket,
 )
-from pipet.sources.zendesk.tasks import backfill_ticket_comments, backfill_tickets
+from pipet.sources.zendesk.tasks import backfill_tickets
 
 
 zendesk_blueprint = Blueprint(SCHEMANAME, __name__, template_folder='templates')
@@ -53,7 +54,7 @@ def activate():
         session.add(account)
         session.commit()
         ticket_job = q.enqueue(backfill_tickets, current_user.id, timeout=3600)
-        q.enqueue(backfill_ticket_comments, current_user.id, depends_on=ticket_job, timeout=1800)
+        q.enqueue(backfill_ticket_comments, current_user.id, depends_on=ticket_job, timeout=6 * 3600)
         return redirect(url_for('zendesk.index'))
     
     if account:
@@ -64,6 +65,16 @@ def activate():
     return render_template('zendesk/activate.html', form=form)
 
 
+@zendesk_blueprint.route('/backfill')
+@login_required
+def backfill():
+    account = session.query(Account).filter(Account.workspace == current_user).first()
+    t = Thread(target=backfill_tickets, args=(account.id, ))
+    t.setDaemon(True)
+    t.start()
+    return redirect(url_for('zendesk.index'))
+
+
 @zendesk_blueprint.route('/deactivate')
 def deactivate():
     account = session.query(Account).filter(Account.workspace == current_user).first()
@@ -71,7 +82,7 @@ def deactivate():
     account.destroy_trigger()
     session.add(account)
     session.commit()
-    return redirect(url_for('index'))
+    return redirect(url_for('zendesk.index'))
 
 
 @zendesk_blueprint.route("/hook", methods=['POST'])
