@@ -31,7 +31,7 @@ from pipet.sources.stripe.models import (
     Transfer
 )
 from pipet.sources.stripe.tasks import backfill_coupons
-from pipet import engine, q, session
+from pipet import engine, session
 
 STRIPE_API_KEY_URL = "https://dashboard.stripe.com/account/apikeys"
 STRIPE_WEBHOOOK_URL = "https://dashboard.stripe.com/account/webhooks"

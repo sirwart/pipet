@@ -3,8 +3,6 @@ import os
 
 from flask import Flask, redirect, render_template, request, url_for
 from flask_sqlalchemy import SQLAlchemy
-from rq import Queue
-from redis import Redis
 import sqlalchemy
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -15,8 +13,6 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY')
 engine = create_engine(os.environ.get('SQLALCHEMY_URI'))
 session = sessionmaker(bind=engine)()
-redis_conn = Redis()
-q = Queue(connection=redis_conn)
 
 import pipet.views
 

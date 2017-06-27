@@ -10,7 +10,7 @@ import requests
 from wtforms import StringField, validators
 from wtforms.fields.html5 import EmailField
 
-from pipet import engine, session, q
+from pipet import engine, session
 from pipet.sources.zendesk.models import (
     SCHEMANAME,
     ZENDESK_MODELS,
@@ -53,8 +53,6 @@ def activate():
             account.create_trigger()
         session.add(account)
         session.commit()
-        ticket_job = q.enqueue(backfill_tickets, current_user.id, timeout=3600)
-        q.enqueue(backfill_ticket_comments, current_user.id, depends_on=ticket_job, timeout=6 * 3600)
         return redirect(url_for('zendesk.index'))
     
     if account:
