@@ -8,6 +8,7 @@ from flask_login import current_user, login_required
 from flask_wtf import FlaskForm
 import requests
 from wtforms import StringField, validators
+from wtforms.fields import BooleanField
 from wtforms.fields.html5 import EmailField
 
 from pipet import engine, session
@@ -24,15 +25,14 @@ zendesk_blueprint = Blueprint(SCHEMANAME, __name__, template_folder='templates')
 
 def backfill(account_id=1):
     account = session.query(Account).get(account_id)
-    t = Thread(target=backfill_tickets, args=(account.id, ))
-    t.setDaemon(True)
-    t.start()
+
 
 
 class AccountForm(FlaskForm):
     subdomain = StringField('Subdomain', validators=[validators.DataRequired()])
     admin_email = EmailField('Admin Email', validators=[validators.DataRequired()])
     api_key = StringField('API Key', validators=[validators.DataRequired()])
+    backfill = BooleanField('Backfill Zendesk data')
 
 
 @zendesk_blueprint.route('/')
@@ -59,6 +59,12 @@ def activate():
             account.create_trigger()
         session.add(account)
         session.commit()
+
+        if form.backfill.data:
+            t = Thread(target=backfill_tickets, args=(account.id, ))
+            t.setDaemon(True)
+            t.start()
+
         return redirect(url_for('zendesk.index'))
 
     if account:

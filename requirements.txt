@@ -1,6 +1,8 @@
+blinker==1.4
 certifi==2017.4.17
 chardet==3.0.3
 click==6.7
+contextlib2==0.5.5
 Flask==0.12.2
 Flask-Login==0.4.0
 Flask-SQLAlchemy==2.2
@@ -10,6 +12,7 @@ itsdangerous==0.24
 Jinja2==2.9.6
 MarkupSafe==1.0
 psycopg2==2.7.1
+raven==6.1.0
 redis==2.10.5
 requests==2.17.3
 rq==0.8.0

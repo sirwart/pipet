@@ -3,6 +3,8 @@ import os
 
 from flask import Flask, redirect, render_template, request, url_for
 from flask_sqlalchemy import SQLAlchemy
+import raven
+from raven.contrib.flask import Sentry
 import sqlalchemy
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -11,8 +13,9 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY')
-engine = create_engine(os.environ.get('SQLALCHEMY_URI'))
+engine = create_engine(os.environ.get('POSTGRES_URI'))
 session = sessionmaker(bind=engine)()
+sentry = Sentry(app)
 
 import pipet.views
 

@@ -1,4 +1,5 @@
-export FLASK_SECRET_KEY=
-export SQLALCHEMY_URI=
-export PIPET_DOMAIN=
 export FLASK_APP=pipet/__init__.py
+export FLASK_SECRET_KEY=
+export POSTGRES_URI=
+export PIPET_DOMAIN=
+export SENTRY_DSN=
