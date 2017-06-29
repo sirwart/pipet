@@ -15,8 +15,6 @@ SCHEMANAME = 'stripe'
 STRIPE_MODELS = {}
 STRIPE_API_VERSION = '2017-06-05'
 
-# stripe.api_key = os.environ.get('STRIPE_API_KEY')
-
 @as_declarative(metadata=MetaData(schema=SCHEMANAME), class_registry=STRIPE_MODELS)
 class Base(object):
     @declared_attr
@@ -30,8 +28,8 @@ class Base(object):
             if value and field in self.__table__._columns.keys():
                 if isinstance(self.__table__._columns.get(field).type, DateTime):
                     setattr(self, field, datetime.fromtimestamp(value))
+                # Stripe returns full objects. I only want to store the ids.
                 elif isinstance(self.__table__._columns.get(field).type, ARRAY):
-                    # Stripe returns full objects. I only want to store the ids.
                     setattr(self, field, sorted([x['id'] for x in value]))
                 elif isinstance(value, dict) and \
                     isinstance(self.__table__._columns.get(field).type, Text) and \
@@ -42,6 +40,8 @@ class Base(object):
                     setattr(self, field, str(value))
                 else:
                     setattr(self, field, value)
+            elif field == 'metadata':
+                setattr(self, 'stripe_metadata', value)
 
 
 class Account(Base):
@@ -49,14 +49,10 @@ class Account(Base):
     api_key = Column(Text)
     workspace_id = Column(Integer)
 
-    def backfill(self):
-        sources = stripe.Source.list(limit=100)
-        for source in sources.auto_paging_iter():
-            pass
-
-        charges = stripe.Charge.list(limit=100)
-        for charge in charges.auto_paging_iter():
-            pass
+    @property
+    def client(self):
+        stripe.api_key = self.api_key
+        return stripe
 
 
 class Source(Base):
@@ -237,7 +233,7 @@ class Invoice(Base):
     webhooks_delivered_at = Column(DateTime)
 
 
-class Invoiceitem(Base):
+class InvoiceItem(Base):
     amount = Column(Integer)
     currency = Column(Text)
     customer = Column(Text, ForeignKey('customer.id'))
@@ -306,3 +302,12 @@ class Transfer(Base):
     source_transaction = Column(Text)
     source_type = Column(Text)
     transfer_group = Column(Text)
+
+
+class TransferReversal(Base):
+    amount = Column(Integer)
+    balance_transaction = Column(Text, ForeignKey('balance_transaction.id'))
+    created = Column(DateTime)
+    currency = Column(Text)
+    stripe_metadata = Column(JSONB)
+    transfer = Column(Text, ForeignKey('transfer.id'))

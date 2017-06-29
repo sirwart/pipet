@@ -13,22 +13,6 @@ from pipet.sources.stripe.models import (
     SCHEMANAME,
     STRIPE_API_VERSION,
     STRIPE_MODELS,
-    Account,
-    Source,
-    BalanceTransaction,
-    Charge,
-    Customer,
-    Dispute,
-    Payout,
-    Refund,
-    Coupon,
-    Discount,
-    Invoice,
-    Invoiceitem,
-    Plan,
-    Subscription,
-    SubscriptionItem,
-    Transfer
 )
 from pipet.sources.stripe.tasks import backfill_coupons
 from pipet import engine, session
