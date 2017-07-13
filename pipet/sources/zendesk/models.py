@@ -296,11 +296,11 @@ class Ticket(Base):
         inst_list = [self]
 
         for user_data in extended_json['users']:
-            user, _ = User.create_or_update(user_data)
+            user, _ = User.create_or_update(user_data, self.account)
             inst_list.append(user)
 
         for group_data in extended_json['groups']:
-            group, _ = Group.create_or_update(group_data)
+            group, _ = Group.create_or_update(group_data, self.account)
             inst_list.append(group)
 
         return inst_list
