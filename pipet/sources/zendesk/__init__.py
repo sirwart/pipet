@@ -101,7 +101,7 @@ def hook():
         '/tickets/{id}.json?include=users,groups'.format(id=ticket_id),
         auth=account.auth)
 
-    ticket, _ = Ticket.create_or_update(resp.json()['ticket'])
+    ticket, _ = Ticket.create_or_update(resp.json()['ticket'], account)
     session.add_all(ticket.update(resp.json()))
     session.add(ticket)
 
