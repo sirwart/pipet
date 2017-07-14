@@ -108,7 +108,7 @@ class Account(Base):
             'title': 'Pipet',
             'type': 'http_target',
             'active': True,
-            'target_url': 'https://' + os.environ.get('PIPET_DOMAIN') + url_for('zendesk.hook'),
+            'target_url': url_for('zendesk.hook', _external=True),
             'username': self.subdomain,
             'password': self.api_key,
             'method': 'post',
