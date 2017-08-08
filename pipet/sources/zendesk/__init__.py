@@ -105,9 +105,9 @@ def hook():
     session.add_all(ticket.update(resp.json()))
     session.add(ticket)
 
-    # resp = requests.get(account.api_base_url + \
-    #     '/tickets/{id}/comments.json'.format(id=ticket.id), auth=account.auth)
+    resp = requests.get(account.api_base_url + \
+        '/tickets/{id}/comments.json'.format(id=ticket.id), auth=account.auth)
 
-    # session.add_all(ticket.update_comments(resp.json()['comments']))
+    session.add_all(ticket.update_comments(resp.json()['comments']))
     session.commit()
     return ('', 204)
