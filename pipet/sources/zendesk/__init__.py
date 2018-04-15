@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.schema import DDL
 
 from pipet import db
-from pipet.sources.zendesk.models import Base
+from pipet.sources.zendesk.models import Base, SCHEMANAME
 
 
 class ZendeskAccount(db.Model):
@@ -20,12 +20,6 @@ class ZendeskAccount(db.Model):
 
     organization = db.relationship('Organization', backref=db.backref(
         'zendesk_account', lazy=True, uselist=False))
-
-    # def __init__(self, subdomain, admin_email, api_key, organization_id):
-    #     self.subdomain = subdomain
-    #     self.admin_email = admin_email
-    #     self.api_key = api_key
-    #     self.organization_id = organization_id
 
     @property
     def base_url(self):
@@ -119,11 +113,13 @@ class ZendeskAccount(db.Model):
         self.trigger_id = None
 
     def create_all(self, session):
-        session.bind.execute(DDL('CREATE SCHEMA IF NOT EXISTS zendesk'))
+        session.bind.execute(
+            DDL('CREATE SCHEMA IF NOT EXISTS {schema}'.format(schema=SCHEMANAME)))
         Base.metadata.create_all(session.bind)
         self.initialized = True
 
     def drop_all(self, session):
         Base.metadata.drop_all(session.bind)
-        session.bind.execute(DDL('DROP SCHEMA IF EXISTS zendesk'))
+        session.bind.execute(
+            DDL('DROP SCHEMA IF EXISTS {schema}'.format(schema=SCHEMANAME)))
         self.initialized = False

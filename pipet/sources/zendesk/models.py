@@ -43,6 +43,10 @@ class Base(object):
     def __hash__(self):
         return hash(self.id)
 
+    def fetch(self):
+        return requests.get(self.account.base_url + '/{endpoint}/{id}.json'.format(endpoint=self.endpoint, id=self.id),
+                            auth=self.account.auth)
+
     def load_json(self, data):
         for field, value in data.items():
             if field in self.__table__._columns.keys():
@@ -80,6 +84,8 @@ class TicketComment(Base):
 
 
 class User(Base):
+    endpoint = 'users'
+
     email = Column(Text)
     name = Column(Text)
     active = Column(Boolean)
@@ -115,24 +121,20 @@ class User(Base):
     # photo
     # user_fields
 
-    # def fetch(self):
-    #     return requests.get(self.account.api_base_url + '/users/{id}.json'.format(id=self.id),
-    #         auth=self.account.auth)
-
 
 class Group(Base):
+    endpoint = 'groups'
+
     created_at = Column(DateTime)
     deleted = Column(Boolean)
     name = Column(Text)
     updated_at = Column(DateTime)
     url = Column(Text)
 
-    # def fetch(self):
-    #     return requests.get(self.account.api_base_url + '/groups/{id}.json'.format(id=self.id),
-    #         auth=self.account.auth)
-
 
 class Organization(Base):
+    endpoint = 'organizations'
+
     external_id = Column(Text)
     name = Column(Text)
     created_at = Column(DateTime)
@@ -147,12 +149,10 @@ class Organization(Base):
     tags = Column(ARRAY(Text, dimensions=1))
     organization_fields = Column(JSONB)
 
-    # def fetch(self):
-    #     return requests.get(self.account.api_base_url + '/organizations/{id}.json'.format(id=self.id),
-    #         auth=self.account.auth)
-
 
 class Ticket(Base):
+    endpoint = 'tickets'
+
     """Can be deleted by admins"""
     created_at = Column(DateTime)
     updated_at = Column(DateTime)
@@ -185,23 +185,20 @@ class Ticket(Base):
     # allow_channelback
     # is_public
 
-    # def fetch(self):
-    #     return requests.get(self.account.api_base_url + '/tickets/{id}.json'.format(id=self.id),
-    #         auth=self.account.auth)
+    def update(self, session, extended_json):
+        """Updates from API"""
+        inst_list = [self]
 
-    # def update(self, extended_json):
-    #     """Updates from API"""
-    #     inst_list = [self]
+        for user_data in extended_json['users']:
+            user, _ = User.create_or_update(session, user_data, self.account)
+            inst_list.append(user)
 
-    #     for user_data in extended_json['users']:
-    #         user, _ = User.create_or_update(user_data, self.account)
-    #         inst_list.append(user)
+        for group_data in extended_json['groups']:
+            group, _ = Group.create_or_update(
+                session, group_data, self.account)
+            inst_list.append(group)
 
-    #     for group_data in extended_json['groups']:
-    #         group, _ = Group.create_or_update(group_data, self.account)
-    #         inst_list.append(group)
-
-    #     return inst_list
+        return inst_list
 
     def update_comments(self, session, comments_json):
         comments = []
