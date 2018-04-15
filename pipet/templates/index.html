@@ -1,9 +1,8 @@
-<!DOCTYPE html>
-<html>
-<head>
-	<title>Pipet</title>
-</head>
-<body>
+{% extends 'base.html' %}
+
+{% block title %}Home{% endblock %}
+
+{% block body %}
 {% if current_user.is_authenticated %}
 <div>
 	<a href="{{ url_for('organization') }}">Organization</a>
@@ -21,5 +20,4 @@
 	    <input type="submit" value="Login">
 	</form>
 {% endif %}
-</body>
-</html>
+{% endblock %}

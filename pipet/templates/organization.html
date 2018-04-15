@@ -1,16 +1,10 @@
-<!DOCTYPE html>
-<html>
-<head>
-	<title>Pipet</title>
-</head>
-<body>
+{% extends 'base.html' %}
 
+{% block body %}
 <form method="POST">
     {{ form.csrf_token }}
     {{ form.name.label }} {{ form.name(size=20) }}
     {{ form.database_credentials.label }} {{ form.database_credentials(size=20) }}
     <input type="submit" value="Submit">
 </form>
-
-</body>
-</html>
+{% endblock %}
