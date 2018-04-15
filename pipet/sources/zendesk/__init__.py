@@ -1,7 +1,6 @@
 from flask import url_for
 import requests
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy.schema import DDL
 
 from pipet import db
@@ -27,14 +26,6 @@ class ZendeskAccount(db.Model):
     #     self.admin_email = admin_email
     #     self.api_key = api_key
     #     self.organization_id = organization_id
-
-    @property
-    def engine(self):
-        return create_engine(self.organization.database_credentials, echo=True)
-
-    @property
-    def session(self):
-        return sessionmaker(bind=self.engine)
 
     @property
     def base_url(self):
@@ -127,12 +118,12 @@ class ZendeskAccount(db.Model):
                         auth=self.auth)
         self.trigger_id = None
 
-    def create_all(self):
-        self.engine.execute(DDL('CREATE SCHEMA IF NOT EXISTS zendesk'))
-        Base.metadata.create_all(self.engine)
+    def create_all(self, session):
+        session.bind.execute(DDL('CREATE SCHEMA IF NOT EXISTS zendesk'))
+        Base.metadata.create_all(session.bind)
         self.initialized = True
 
-    def drop_all(self):
-        Base.metadata.drop_all(self.engine)
-        self.engine.execute(DDL('DROP SCHEMA IF EXISTS zendesk'))
+    def drop_all(self, session):
+        Base.metadata.drop_all(session.bind)
+        session.bind.execute(DDL('DROP SCHEMA IF EXISTS zendesk'))
         self.initialized = False

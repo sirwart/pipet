@@ -59,101 +59,6 @@ class Base(object):
         return self
 
 
-# class Account(Base):
-#     id = Column(Integer, primary_key=True)
-#     subdomain = Column(Text)
-#     admin_email = Column(Text)
-#     api_key = Column(Text)
-#     trigger_id = Column(Text)
-#     target_id = Column(Text)
-#     workspace_id = Column(Integer, ForeignKey(Workspace.id), unique=True)
-
-#     workspace = relationship(Workspace, backref=backref('zendesk_account', lazy='dynamic'))
-
-#     def __init__(self, subdomain, admin_email, api_key, workspace_id):
-#         self.subdomain = subdomain
-#         self.admin_email = admin_email
-#         self.api_key = api_key
-#         self.workspace_id = workspace_id
-
-#     @property
-#     def api_base_url(self):
-#         return 'https://{subdomain}.zendesk.com/api/v2'.format(subdomain=self.subdomain)
-
-#     @property
-#     def auth(self):
-#         return (self.admin_email + '/token', self.api_key)
-
-#     @property
-#     def target_exists(self):
-#         resp = requests.get(self.api_base_url + '/targets/{id}.json'.format(id=self.target_id))
-#         if resp.status_code == 200:
-#             return True
-#         return False
-
-#     @property
-#     def trigger_exists(self):
-#         resp = requests.get(self.api_base_url + '/triggers/{id}.json'.format(id=self.target_id))
-#         if resp.status_code == 200:
-#             return True
-#         return False
-
-#     def create_target(self):
-#         if self.target_id:
-#             return False
-
-#         target_payload = {'target': {
-#             'title': 'Pipet',
-#             'type': 'http_target',
-#             'active': True,
-#             'target_url': url_for('zendesk.hook', _external=True),
-#             'username': self.subdomain,
-#             'password': self.api_key,
-#             'method': 'post',
-#             'content_type': 'application/json',}}
-#         resp = requests.post(self.api_base_url + '/targets.json',
-#             auth=self.auth, json=target_payload)
-#         assert resp.status_code == 201
-#         self.target_id = resp.json()['target']['id']
-#         return True
-
-#     def create_trigger(self):
-#         if self.trigger_id:
-#             return False
-
-#         trigger_payload = {'trigger': {
-#             'actions': [{
-#                 'field': 'notification_target',
-#                 'value': [str(self.target_id), '{"id": {{ticket.id}}}']
-#             }],
-#             'active': True,
-#             'conditions': {
-#                 'all': [],
-#                 'any': [
-#                     {'field': 'update_type', 'operator': 'is', 'value': 'Create'},
-#                     {'field': 'update_type', 'operator': 'is', 'value': 'Change'}
-#                 ]
-#             },
-#             'description': None,
-#             'title': 'Pipet Trigger',
-#         }}
-
-#         resp = requests.post(self.api_base_url + '/triggers.json',
-#             auth=self.auth, json=trigger_payload)
-#         self.trigger_id = resp.json()['trigger']['id']
-#         return True
-
-#     def destroy_target(self):
-#         requests.delete(self.api_base_url + '/targets/{id}.json'.format(id=self.target_id),
-#             auth=self.auth)
-#         self.target_id = None
-
-#     def destroy_trigger(self):
-#         requests.delete(self.api_base_url + '/triggers/{id}.json'.format(id=self.trigger_id),
-#             auth=self.auth)
-#         self.trigger_id = None
-
-
 class TicketComment(Base):
     """Cannot be deleted (unless ticket is deleted)"""
     type = Column(Text)
@@ -298,20 +203,20 @@ class Ticket(Base):
 
     #     return inst_list
 
-    # def update_comments(self, comments_json):
-    #     comments = []
-    #     for comment_json in comments_json:
-    #         raise NotImplemented, "Need to figure out session stuff"
-    #         if not session.query(User).get(comment_json['author_id']):
-    #             user = User()
-    #             user.id = comment_json['author_id']
-    #             user.account = self.account
-    #             user_resp = user.fetch()
-    #             user.load_json(user_resp.json())
-    #             comments.append(user)
+    def update_comments(self, session, comments_json):
+        comments = []
+        for comment_json in comments_json:
+            if not session.query(User).get(comment_json['author_id']):
+                user = User()
+                user.id = comment_json['author_id']
+                user.account = self.account
+                user_resp = user.fetch()
+                user.load_json(user_resp.json())
+                comments.append(user)
 
-    #         comment, _ = TicketComment.create_or_update(comment_json, self.account)
-    #         comment.ticket_id = self.id
-    #         comments.append(comment)
+            comment, _ = TicketComment.create_or_update(
+                session, comment_json, self.account)
+            comment.ticket_id = self.id
+            comments.append(comment)
 
-    #     return comments
+        return comments

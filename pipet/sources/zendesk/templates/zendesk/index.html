@@ -7,6 +7,12 @@
 	Setup your Zendesk account to start sending data.
 </div>
 <div>
+	Initialized: {{ current_user.organization.zendesk_account.initialized }}
+</div>
+<div>
+	<a href="{{ url_for('zendesk.reset') }}">Reset</a>
+</div>
+<div>
     <a href="{{ url_for('zendesk.activate') }}">Activate</a>
 </div>
 <div>

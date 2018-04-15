@@ -3,7 +3,8 @@ import uuid
 
 from flask import url_for
 from flask_login import UserMixin
-from sqlalchemy import Column
+from sqlalchemy import Column, create_engine
+from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.types import Integer
 
 from pipet import app, db
@@ -51,3 +52,8 @@ class User(db.Model, UserMixin):
 class Organization(db.Model):
     name = db.Column(db.Text)
     database_credentials = db.Column(db.Text)
+
+    def create_scoped_session(self):
+        engine = create_engine(self.database_credentials, echo=False)
+        session_factory = sessionmaker(bind=engine)
+        return scoped_session(session_factory)

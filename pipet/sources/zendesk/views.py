@@ -12,7 +12,7 @@ from pipet import db
 from pipet.sources.zendesk import ZendeskAccount
 from pipet.sources.zendesk.forms import CreateAccountForm, DestroyAccountForm
 from pipet.sources.zendesk.models import Base
-from pipet.sources.zendesk.tasks import hello
+from pipet.sources.zendesk.tasks import backfill
 
 blueprint = Blueprint('zendesk', __name__, template_folder='templates')
 
@@ -20,13 +20,14 @@ blueprint = Blueprint('zendesk', __name__, template_folder='templates')
 @blueprint.route('/')
 @login_required
 def index():
-    hello.delay()
     return render_template('zendesk/index.html')
 
 
 @blueprint.route('/activate', methods=['GET', 'POST'])
 @login_required
 def activate():
+    scoped_session = current_user.organization.create_scoped_session()
+    session = scoped_session()
     form = CreateAccountForm()
     account = current_user.organization.zendesk_account
     if form.validate_on_submit():
@@ -46,7 +47,7 @@ def activate():
         if not account.trigger_exists:
             account.create_trigger()
         if not account.initialized:
-            account.create_all()
+            account.create_all(session)
 
         db.session.add(account)
         db.session.commit()
@@ -75,11 +76,22 @@ def deactivate():
         account.destroy_target()
         account.destroy_trigger()
         account.drop_all()
-        session.add(account)
-        session.commit()
+        db.session.add(account)
+        db.session.commit()
         return redirect(url_for('zendesk.index'))
 
     return render_template('zendesk/deactivate.html')
+
+
+@blueprint.route('/reset')
+@login_required
+def reset():
+    scoped_session = current_user.organization.create_scoped_session()
+    session = scoped_session()
+    current_user.organization.zendesk_account.drop_all(session)
+    current_user.organization.zendesk_account.create_all(session)
+    backfill.delay(current_user.organization.zendesk_account.id)
+    return redirect(url_for('zendesk.index'))
 
 
 @blueprint.route("/hook", methods=['POST'])
@@ -89,6 +101,9 @@ def hook():
 
     account = Account.query.filter((Account.subdomain == request.authorization.username) &
                                    (Account.api_key == request.authorization.password)).first()
+
+    scoped_session = account.organization.create_scoped_session()
+    session = scoped_session()
 
     if not account:
         return ('', 401)

@@ -9,3 +9,5 @@ SQL for APIs
 2. `make develop`
 
 3. Run the application either with `flask run` or Docker.
+
+4. `watchmedo shell-command --patterns="*.py" --recursive --command='pkill -f celery; celery -A pipet.celery worker'`
