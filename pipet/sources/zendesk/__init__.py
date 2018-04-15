@@ -1,113 +1,138 @@
-from datetime import datetime
-from functools import wraps
-import os
-from threading import Thread
-
-from flask import Blueprint, redirect, request, Response, render_template, url_for
-from flask_login import current_user, login_required
-from flask_wtf import FlaskForm
+from flask import url_for
 import requests
-from wtforms import StringField, validators
-from wtforms.fields import BooleanField
-from wtforms.fields.html5 import EmailField
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.schema import DDL
 
-from pipet import engine, session
-from pipet.sources.zendesk.models import (
-    SCHEMANAME,
-    ZENDESK_MODELS,
-    Account,
-    Ticket,
-)
-from pipet.sources.zendesk.tasks import backfill_tickets
+from pipet import db
+from pipet.sources.zendesk.models import Base
 
 
-zendesk_blueprint = Blueprint(SCHEMANAME, __name__, template_folder='templates')
+class ZendeskAccount(db.Model):
+    subdomain = db.Column(db.Text)
+    admin_email = db.Column(db.Text)
+    api_key = db.Column(db.Text)
+    trigger_id = db.Column(db.Text)
+    target_id = db.Column(db.Text)
+    # has the database schema and tables been created
+    initialized = db.Column(db.Boolean)
 
-def backfill(account_id=1):
-    account = session.query(Account).get(account_id)
+    organization_id = db.Column(db.Integer, db.ForeignKey('organization.id'))
 
+    organization = db.relationship('Organization', backref=db.backref(
+        'zendesk_account', lazy=True, uselist=False))
 
+    # def __init__(self, subdomain, admin_email, api_key, organization_id):
+    #     self.subdomain = subdomain
+    #     self.admin_email = admin_email
+    #     self.api_key = api_key
+    #     self.organization_id = organization_id
 
-class AccountForm(FlaskForm):
-    subdomain = StringField('Subdomain', validators=[validators.DataRequired()])
-    admin_email = EmailField('Admin Email', validators=[validators.DataRequired()])
-    api_key = StringField('API Key', validators=[validators.DataRequired()])
-    backfill = BooleanField('Backfill Zendesk data')
+    @property
+    def engine(self):
+        return create_engine(self.organization.database_credentials, echo=True)
 
+    @property
+    def session(self):
+        return sessionmaker(bind=self.engine)
 
-@zendesk_blueprint.route('/')
-@login_required
-def index():
-    return render_template('zendesk/index.html')
+    @property
+    def base_url(self):
+        return 'https://{subdomain}.zendesk.com/api/v2'.format(subdomain=self.subdomain)
 
+    @property
+    def auth(self):
+        return (self.admin_email + '/token', self.api_key)
 
-@zendesk_blueprint.route('/activate', methods=['GET', 'POST'])
-@login_required
-def activate():
-    form = AccountForm()
-    account = session.query(Account).filter(Account.workspace == current_user).first()
-    if form.validate_on_submit():
-        if not account:
-            account = Account(
-                subdomain=form.subdomain.data,
-                admin_email=form.admin_email.data,
-                api_key=form.api_key.data,
-                workspace_id=current_user.id)
-        if not account.target_exists:
-            account.create_target()
-        if not account.trigger_exists:
-            account.create_trigger()
-        session.add(account)
-        session.commit()
+    @property
+    def target_exists(self):
+        resp = requests.get(
+            self.base_url + '/targets/{id}.json'.format(id=self.target_id))
+        if resp.status_code == 200:
+            return True
+        return False
 
-        if form.backfill.data:
-            t = Thread(target=backfill_tickets, args=(account.id, ))
-            t.setDaemon(True)
-            t.start()
+    @property
+    def trigger_exists(self):
+        resp = requests.get(
+            self.base_url + '/triggers/{id}.json'.format(id=self.target_id))
+        if resp.status_code == 200:
+            return True
+        return False
 
-        return redirect(url_for('zendesk.index'))
+    def create_target(self):
+        """Returns True if target was created, False if it already existed"""
+        resp = requests.get(self.base_url + '/targets.json', auth=self.auth)
+        for target in resp.json()['targets']:
+            if target['type'] == 'url_target_v2' and target['target_url'] == url_for('zendesk.hook', _external=True):
+                self.target_id = target['id']
+                return False
 
-    if account:
-        form.subdomain.data = account.subdomain
-        form.admin_email.data = account.admin_email
-        form.api_key.data = account.api_key
+        if self.target_id and requests.get(self.base_url + '/targets/{id}.json'.format(id=self.target_id), auth=self.auth).status_code == 200:
+            return False
 
-    return render_template('zendesk/activate.html', form=form)
+        target_payload = {'target': {
+            'title': 'Pipet',
+            'type': 'http_target',
+            'active': True,
+            'target_url': url_for('zendesk.hook', _external=True),
+            'username': self.subdomain,
+            'password': self.api_key,
+            'method': 'post',
+            'content_type': 'application/json', }}
+        resp = requests.post(self.base_url + '/targets.json',
+                             auth=self.auth, json=target_payload)
+        assert resp.status_code == 201
+        self.target_id = resp.json()['target']['id']
+        return True
 
+    def create_trigger(self):
+        for trigger in requests.get(self.base_url + '/triggers.json', auth=self.auth).json()['triggers']:
+            if sum([1 for action in trigger['actions'] if action['field'] == 'notification_target' and action['value'][0] == str(self.target_id)]) > 0:
+                self.trigger_id = trigger['id']
+                return False
 
-@zendesk_blueprint.route('/deactivate')
-def deactivate():
-    account = session.query(Account).filter(Account.workspace == current_user).first()
-    account.destroy_target()
-    account.destroy_trigger()
-    session.add(account)
-    session.commit()
-    return redirect(url_for('zendesk.index'))
+        if self.trigger_id and requests.get(self.base_url + '/triggers/{id}.json'.format(id=self.trigger_id), auth=self.auth).status_code == 200:
+            return False
 
+        trigger_payload = {'trigger': {
+            'actions': [{
+                'field': 'notification_target',
+                'value': [str(self.target_id), '{"id": {{ticket.id}}}']
+            }],
+            'active': True,
+            'conditions': {
+                'all': [],
+                'any': [
+                    {'field': 'update_type', 'operator': 'is', 'value': 'Create'},
+                    {'field': 'update_type', 'operator': 'is', 'value': 'Change'}
+                ]
+            },
+            'description': None,
+            'title': 'Pipet Trigger',
+        }}
 
-@zendesk_blueprint.route("/hook", methods=['POST'])
-def hook():
-    if not request.authorization:
-        return ('', 401)
+        resp = requests.post(self.base_url + '/triggers.json',
+                             auth=self.auth, json=trigger_payload)
+        self.trigger_id = resp.json()['trigger']['id']
+        return True
 
-    account = session.query(Account).filter((Account.subdomain == request.authorization.username) &
-        (Account.api_key == request.authorization.password)).first()
+    def destroy_target(self):
+        requests.delete(self.base_url + '/targets/{id}.json'.format(id=self.target_id),
+                        auth=self.auth)
+        self.target_id = None
 
-    if not account:
-        return ('', 401)
+    def destroy_trigger(self):
+        requests.delete(self.base_url + '/triggers/{id}.json'.format(id=self.trigger_id),
+                        auth=self.auth)
+        self.trigger_id = None
 
-    ticket_id = request.get_json()['id']
-    resp = requests.get(account.api_base_url + \
-        '/tickets/{id}.json?include=users,groups'.format(id=ticket_id),
-        auth=account.auth)
+    def create_all(self):
+        self.engine.execute(DDL('CREATE SCHEMA IF NOT EXISTS zendesk'))
+        Base.metadata.create_all(self.engine)
+        self.initialized = True
 
-    ticket, _ = Ticket.create_or_update(resp.json()['ticket'], account)
-    session.add_all(ticket.update(resp.json()))
-    session.add(ticket)
-
-    resp = requests.get(account.api_base_url + \
-        '/tickets/{id}/comments.json'.format(id=ticket.id), auth=account.auth)
-
-    session.add_all(ticket.update_comments(resp.json()['comments']))
-    session.commit()
-    return ('', 204)
+    def drop_all(self):
+        Base.metadata.drop_all(self.engine)
+        self.engine.execute(DDL('DROP SCHEMA IF EXISTS zendesk'))
+        self.initialized = False

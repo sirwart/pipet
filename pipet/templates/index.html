@@ -6,16 +6,20 @@
 <body>
 {% if current_user.is_authenticated %}
 <div>
-	<a href="{{ url_for('zendesk.index') }}">Zendesk</a>
+	<a href="{{ url_for('organization') }}">Organization</a>
 </div>
 <div>
-	<a href="{{ url_for('stripe.index') }}">Stripe</a>
+	<a href="{{ url_for('zendesk.index') }}">Zendesk</a>
 </div>
 <div>
 	<a href="{{ url_for('logout') }}">Logout</a>
 </div>
 {% else %}
-	<a href="{{ url_for('login') }}">Login</a>
+	<form method="POST" action="/">
+	    {{ form.csrf_token }}
+	    {{ form.email.label }} {{ form.email(size=20) }}
+	    <input type="submit" value="Login">
+	</form>
 {% endif %}
 </body>
 </html>

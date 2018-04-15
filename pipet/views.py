@@ -4,53 +4,48 @@ from flask_wtf import FlaskForm
 from wtforms import PasswordField, StringField, validators
 from wtforms.fields.html5 import EmailField
 
-from pipet import app, session, engine
-from pipet.models import Workspace
-
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'
-
-@login_manager.user_loader
-def load_user(workspace_id):
-    return session.query(Workspace).get(workspace_id)
+from pipet import app, db, login_manager
+from pipet.forms import LoginForm, OrganizationForm
+from pipet.models import Organization, User
 
 
-class SignupForm(FlaskForm):
-    email = EmailField('Email', validators=[validators.DataRequired()])
-    password = PasswordField('Password', validators=[validators.DataRequired()])
-
-
-class LoginForm(FlaskForm):
-    email = EmailField('Email', validators=[validators.DataRequired()])
-    password = PasswordField('Password', validators=[validators.DataRequired()])
-
-
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
 def index():
-    return render_template('index.html')
-
-
-@app.route('/signup', methods=('GET', 'POST'))
-def signup():
-    form = SignupForm()
-    if form.validate_on_submit():
-        user = Workspace(form.email.data, form.password.data)
-        session.add(user)
-        session.commit()
-        return redirect(url_for("index"))
-    return render_template('signup.html', form=form)
-
-
-@app.route('/login', methods=('GET', 'POST'))
-def login():
     form = LoginForm()
     if form.validate_on_submit():
-        user = session.query(Workspace).filter_by(email=form.email.data).first()
-        if user.check_password(form.password.data):
-            login_user(user)
-            return redirect(url_for("index"))
-    return render_template('login.html', form=form)
+        user = User.query.filter_by(email=request.form['email']).first()
+        if not user:
+            org = Organization()
+            user = User(email=request.form['email'], organization=org)
+
+        user.refresh_validation_hash()
+        user.send_confirmation_email()
+        db.session.add(user)
+        db.session.commit()
+        return "Check your inbox"
+    return render_template('index.html', form=form)
+
+
+@app.route('/login/<validation_hash>')
+def login_with_validation(validation_hash):
+    user = User.query.filter_by(validation_hash=validation_hash).first_or_404()
+    login_user(user)
+    return redirect(url_for('index'))
+
+
+@app.route('/organization', methods=['GET', 'POST'])
+@login_required
+def organization():
+    form = OrganizationForm()
+    if form.validate_on_submit():
+        current_user.organization.name = request.form['name']
+        current_user.organization.database_credentials = request.form['database_credentials']
+        db.session.add(current_user.organization)
+        db.session.commit()
+
+        return redirect(url_for('index'))
+
+    return render_template('organization.html', form=form)
 
 
 @app.route('/logout')

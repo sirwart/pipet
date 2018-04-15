@@ -1,80 +1,64 @@
-import json
+# -*- coding: utf-8 -*-
+import logging
 import os
 
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask
+from flask_login import LoginManager
 from flask_sqlalchemy import SQLAlchemy
-import raven
+from flask_sqlalchemy import Model
+from flask_wtf.csrf import CSRFProtect
 from raven.contrib.flask import Sentry
-import sqlalchemy
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.schema import CreateSchema, DropSchema
+from raven.contrib.celery import register_logger_signal, register_signal
+from sqlalchemy import Column
+from sqlalchemy.sql import func
+from sqlalchemy.types import DateTime, Integer
 
+from pipet.utils.celery import make_celery
+
+
+class Base(Model):
+    id = Column(Integer, primary_key=True)
+    created = Column(DateTime, server_default=func.now(), nullable=False)
+
+
+csrf = CSRFProtect()
+db = SQLAlchemy(model_class=Base)
+login_manager = LoginManager()
+sentry = Sentry(logging=True, level=logging.ERROR, wrap_wsgi=True)
 
 app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
+    'SQLALCHEMY_DATABASE_URI')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SERVER_NAME'] = os.environ.get('SERVER_NAME', None)
+app.config['PREFERRED_URL_SCHEME'] = os.environ.get('PREFERRED_URL_SCHEME')
+app.config['CELERY_RESULT_BACKEND'] = os.environ.get('REDIS_URL')
+app.config['CELERY_BROKER_URL'] = os.environ.get('REDIS_URL')
+app.config['GOOGLE_PICKER_API_KEY'] = os.environ.get('GOOGLE_PICKER_API_KEY')
+app.config['WEBPACK_MANIFEST_PATH'] = 'static/build/manifest.json'
 app.secret_key = os.environ.get('FLASK_SECRET_KEY')
-engine = create_engine(os.environ.get('POSTGRES_URI'))
-session = sessionmaker(bind=engine)()
-sentry = Sentry(app)
 
-import pipet.views
+celery = make_celery(app)
+csrf.init_app(app)
+db.init_app(app)
+sentry.init_app(app)
+login_manager.init_app(app)
+login_manager.login_view = 'index'
 
-schemas = []
-tables = []
+
+from pipet.models import User
 
 
-from pipet.sources.zendesk import zendesk_blueprint
-from pipet.sources.zendesk import models as zendesk_models
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(user_id)
+
+
+from pipet import views  # NOQA
+from pipet import cli  # NOQA
+from pipet.sources.zendesk.views import blueprint as zendesk_blueprint
 
 app.register_blueprint(zendesk_blueprint, url_prefix='/zendesk')
-schemas.append(zendesk_models.SCHEMANAME)
-for name in zendesk_models.ZENDESK_MODELS:
-    if name == '_sa_module_registry':
-        continue
-    tables.append(zendesk_models.ZENDESK_MODELS.get(name))
 
-
-from pipet.sources.stripe import stripe_blueprint
-from pipet.sources.stripe import models as stripe_models
-
-app.register_blueprint(stripe_blueprint, url_prefix='/stripe')
-schemas.append(stripe_models.SCHEMANAME)
-for name in stripe_models.STRIPE_MODELS:
-    if name == '_sa_module_registry':
-        continue
-    tables.append(stripe_models.STRIPE_MODELS.get(name))
-
-# Setup Scripts
-def create_all():
-    # Pipet Models
-    from pipet.models import TABLES
-    for name in TABLES:
-        if name == '_sa_module_registry':
-            continue
-        TABLES[name].metadata.create_all(engine)
-
-    try:
-        for schema in app.blueprints:
-            session.execute(CreateSchema(schema))
-        session.commit()
-    except sqlalchemy.exc.ProgrammingError as e:
-        print(e)
-        pass
-
-    for table in tables:
-        try:
-            table.metadata.create_all(engine)
-        except sqlalchemy.exc.ProgrammingError as e:
-            print(e)
-            pass
-
-
-def drop_all():
-    for table in tables:
-        table.metadata.drop_all(engine)
-
-    for schema in app.blueprints:
-        session.execute(DropSchema(schema))
-    session.commit()
-
-    drop_all()
+from pipet.sources.zendesk import ZendeskAccount
+# from pipet.sources.zendesk.models import db as zendesk_db

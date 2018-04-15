@@ -1,0 +1,19 @@
+exclude: '\.snap$'
+repos:
+-   repo: git://github.com/pre-commit/mirrors-autopep8
+    sha: v1.3.3
+    hooks:
+    -   id: autopep8
+-   repo: git://github.com/pre-commit/pre-commit-hooks
+    sha: v1.1.1
+    hooks:
+    -   id: end-of-file-fixer
+    -   id: trailing-whitespace
+-   repo: git://github.com/getsentry/pre-commit-hooks
+    sha: f3237d2d65af81d435c49dee3593dc8f03d23c2d
+    hooks:
+    -   id: prettier
+-   repo: git://github.com/pre-commit/pre-commit-hooks
+    sha: v1.1.1
+    hooks:
+    -   id: debug-statements
