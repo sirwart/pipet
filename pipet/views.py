@@ -36,7 +36,8 @@ def login_with_validation(validation_hash):
 @app.route('/organization', methods=['GET', 'POST'])
 @login_required
 def organization():
-    form = OrganizationForm()
+    form = OrganizationForm(obj=current_user.organization)
+
     if form.validate_on_submit():
         current_user.organization.name = request.form['name']
         current_user.organization.database_credentials = request.form['database_credentials']

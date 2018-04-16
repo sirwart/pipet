@@ -26,7 +26,7 @@ def index():
 def activate():
     scoped_session = current_user.organization.create_scoped_session()
     session = scoped_session()
-    form = CreateAccountForm()
+    form = CreateAccountForm(obj=current_user.organization.zendesk_account)
     account = current_user.organization.zendesk_account
     if form.validate_on_submit():
         if not account:
