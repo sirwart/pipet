@@ -56,9 +56,13 @@ def load_user(user_id):
 
 from pipet import views  # NOQA
 from pipet import cli  # NOQA
+
+from pipet.sources.zendesk import ZendeskAccount
 from pipet.sources.zendesk.views import blueprint as zendesk_blueprint
 
 app.register_blueprint(zendesk_blueprint, url_prefix='/zendesk')
 
-from pipet.sources.zendesk import ZendeskAccount
-# from pipet.sources.zendesk.models import db as zendesk_db
+from pipet.sources.stripe import StripeAccount
+from pipet.sources.stripe.views import blueprint as stripe_blueprint
+
+app.register_blueprint(stripe_blueprint, url_prefix='/stripe')

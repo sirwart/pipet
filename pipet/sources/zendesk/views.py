@@ -1,7 +1,4 @@
 from datetime import datetime
-from functools import wraps
-import os
-from threading import Thread
 
 from flask import Blueprint, redirect, request, Response, render_template, url_for
 from flask_login import current_user, login_required
@@ -11,10 +8,11 @@ from sqlalchemy.exc import ProgrammingError
 from pipet import db
 from pipet.sources.zendesk import ZendeskAccount
 from pipet.sources.zendesk.forms import CreateAccountForm, DestroyAccountForm
-from pipet.sources.zendesk.models import Base
+from pipet.sources.zendesk.models import Base, SCHEMANAME
 from pipet.sources.zendesk.tasks import backfill
 
-blueprint = Blueprint('zendesk', __name__, template_folder='templates')
+
+blueprint = Blueprint(SCHEMANAME, __name__, template_folder='templates')
 
 
 @blueprint.route('/')

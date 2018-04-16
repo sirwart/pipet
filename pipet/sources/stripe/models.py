@@ -7,13 +7,14 @@ from sqlalchemy.ext.declarative import as_declarative, declared_attr
 from sqlalchemy.orm import relationship
 from sqlalchemy.schema import MetaData, ForeignKey
 from sqlalchemy.types import Boolean, Float, Text, Integer, DateTime
-# import stripe
-
-from pipet.models import Workspace
+import stripe
 
 SCHEMANAME = 'stripe'
+STRIPE_API_KEY_URL = 'https://dashboard.stripe.com/account/apikeys'
+STRIPE_API_VERSION = '2018-02-28'
+STRIPE_WEBHOOOK_URL = 'https://dashboard.stripe.com/account/webhooks'
 STRIPE_MODELS = {}
-STRIPE_API_VERSION = '2017-06-05'
+
 
 @as_declarative(metadata=MetaData(schema=SCHEMANAME), class_registry=STRIPE_MODELS)
 class Base(object):
@@ -32,27 +33,16 @@ class Base(object):
                 elif isinstance(self.__table__._columns.get(field).type, ARRAY):
                     setattr(self, field, sorted([x['id'] for x in value]))
                 elif isinstance(value, dict) and \
-                    isinstance(self.__table__._columns.get(field).type, Text) and \
-                    self.__table__._columns.get(field).foreign_keys:
+                        isinstance(self.__table__._columns.get(field).type, Text) and \
+                        self.__table__._columns.get(field).foreign_keys:
                     setattr(self, field, str(value['id']))
                 elif isinstance(self.__table__._columns.get(field).type, Text) and \
-                    field == 'id':
+                        field == 'id':
                     setattr(self, field, str(value))
                 else:
                     setattr(self, field, value)
             elif field == 'metadata':
                 setattr(self, 'stripe_metadata', value)
-
-
-class Account(Base):
-    id = Column(Integer, primary_key=True)
-    api_key = Column(Text)
-    workspace_id = Column(Integer)
-
-    @property
-    def client(self):
-        stripe.api_key = self.api_key
-        return stripe
 
 
 class Source(Base):
@@ -154,7 +144,8 @@ class Payout(Base):
     currency = Column(Text)
     description = Column(Text)
     destination = Column(Text)
-    failure_balance_transaction = Column(Text, ForeignKey('balance_transaction.id'))
+    failure_balance_transaction = Column(
+        Text, ForeignKey('balance_transaction.id'))
     failure_code = Column(Text)
     failure_message = Column(Text)
     stripe_metadata = Column(JSONB, name='metadata')
@@ -193,6 +184,7 @@ class Coupon(Base):
     @staticmethod
     def backfill(account_id):
         print(account_id)
+
 
 class Discount(Base):
     coupon = Column(Text, ForeignKey('coupon.id'))

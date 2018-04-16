@@ -3,7 +3,7 @@ import requests
 from sqlalchemy import create_engine
 from sqlalchemy.schema import DDL
 
-from pipet import db
+from pipet.models import db
 from pipet.sources.zendesk.models import Base, SCHEMANAME
 
 
