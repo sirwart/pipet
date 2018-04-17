@@ -22,6 +22,7 @@ logger = get_task_logger(__name__)
 @celery.task
 def backfill(account_id, start_time=0):
     backfill_start_time = datetime.now()
+
     account = ZendeskAccount.query.get(account_id)
     scoped_session = account.organization.create_scoped_session()
     session = scoped_session()
@@ -88,28 +89,37 @@ def backfill(account_id, start_time=0):
     session.commit()
     comments = []
     tickets = session.query(Ticket).all()
-    ticket_comment_processed = 0
 
     logger.info('adding comments for %d tickets' % len(tickets))
 
     for ticket in tickets:
-        ticket_comment_processed += 1
-        logger.info('adding comments for %d / %d tickets' %
-                    (ticket_comment_processed, len(tickets)))
-
-        query = session.query(func.max(TicketComment.created_at))
-        max_comments_time = query.filter(TicketComment.ticket_id == ticket.id).group_by(
-            TicketComment.ticket_id).first()
-        if max_comments_time and ticket.updated_at == max_comments_time[0]:
-            continue
-
-        resp = requests.get(account.base_url +
-                            '/tickets/{id}/comments.json'.format(id=ticket.id),
-                            auth=account.auth)
-        assert resp.status_code == 200
-        comments = ticket.update_comments(session, resp.json()['comments'])
-        session.add_all(comments)
-        session.commit()
+        backfill_ticket_comments.delay(account_id, ticket.id)
 
     logger.info('Backfill complete, took %d seconds' %
                 int((datetime.now() - backfill_start_time).total_seconds()))
+
+
+@celery.task(autoretry_for=(requests.HTTPError, ), retry_backoff=15, retry_kwargs={'max_retries': 3})
+def backfill_ticket_comments(account_id, ticket_id):
+    account = ZendeskAccount.query.get(account_id)
+    scoped_session = account.organization.create_scoped_session()
+    session = scoped_session()
+
+    ticket = session.query(Ticket).get(ticket_id)
+    query = session.query(func.max(TicketComment.created_at))
+    max_comments_time = query.filter(TicketComment.ticket_id == ticket.id).group_by(
+        TicketComment.ticket_id).first()
+
+    if max_comments_time and ticket.updated_at == max_comments_time[0]:
+        return
+
+    resp = requests.get(account.base_url +
+                        '/tickets/{id}/comments.json'.format(id=ticket.id),
+                        auth=account.auth)
+    resp.raise_for_status()
+
+    comments, users = ticket.update_comments(
+        session, resp.json()['comments'], account)
+    session.add_all(users)
+    session.add_all(comments)
+    session.commit()

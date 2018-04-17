@@ -37,15 +37,14 @@ class Base(object):
             return inst.load_json(data), False
 
         inst = cls()
-        inst.account = account
         return inst.load_json(data), True
 
     def __hash__(self):
         return hash(self.id)
 
     def fetch(self):
-        return requests.get(self.account.base_url + '/{endpoint}/{id}.json'.format(endpoint=self.endpoint, id=self.id),
-                            auth=self.account.auth)
+        return requests.get(account.base_url + '/{endpoint}/{id}.json'.format(endpoint=self.endpoint, id=self.id),
+                            auth=account.auth)
 
     def load_json(self, data):
         for field, value in data.items():
@@ -185,35 +184,35 @@ class Ticket(Base):
     # allow_channelback
     # is_public
 
-    def update(self, session, extended_json):
+    def update(self, session, extended_json, account):
         """Updates from API"""
         inst_list = [self]
 
         for user_data in extended_json['users']:
-            user, _ = User.create_or_update(session, user_data, self.account)
+            user, _ = User.create_or_update(session, user_data, account)
             inst_list.append(user)
 
         for group_data in extended_json['groups']:
             group, _ = Group.create_or_update(
-                session, group_data, self.account)
+                session, group_data, account)
             inst_list.append(group)
 
         return inst_list
 
-    def update_comments(self, session, comments_json):
+    def update_comments(self, session, comments_json, account):
         comments = []
+        users = []
         for comment_json in comments_json:
-            if not session.query(User).get(comment_json['author_id']):
+            if not session.query(User).get(comment_json['author_id']) and comment_json['author_id'] not in [user.id for user in users]:
                 user = User()
                 user.id = comment_json['author_id']
-                user.account = self.account
                 user_resp = user.fetch()
                 user.load_json(user_resp.json())
-                comments.append(user)
+                users.append(user)
 
             comment, _ = TicketComment.create_or_update(
-                session, comment_json, self.account)
+                session, comment_json, account)
             comment.ticket_id = self.id
             comments.append(comment)
 
-        return comments
+        return comments, users
