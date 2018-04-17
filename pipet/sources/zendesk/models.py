@@ -42,7 +42,7 @@ class Base(object):
     def __hash__(self):
         return hash(self.id)
 
-    def fetch(self):
+    def fetch(self, account):
         return requests.get(account.base_url + '/{endpoint}/{id}.json'.format(endpoint=self.endpoint, id=self.id),
                             auth=account.auth)
 
@@ -206,7 +206,7 @@ class Ticket(Base):
             if not session.query(User).get(comment_json['author_id']) and comment_json['author_id'] not in [user.id for user in users]:
                 user = User()
                 user.id = comment_json['author_id']
-                user_resp = user.fetch()
+                user_resp = user.fetch(account)
                 user.load_json(user_resp.json())
                 users.append(user)
 
