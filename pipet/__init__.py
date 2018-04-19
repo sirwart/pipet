@@ -28,7 +28,7 @@ sentry = Sentry(logging=True, level=logging.ERROR, wrap_wsgi=True)
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
-    'SQLALCHEMY_DATABASE_URI')
+    'POSTGRES_URI')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SERVER_NAME'] = os.environ.get('SERVER_NAME', None)
 app.config['PREFERRED_URL_SCHEME'] = os.environ.get('PREFERRED_URL_SCHEME')

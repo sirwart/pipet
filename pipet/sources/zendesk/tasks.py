@@ -24,8 +24,8 @@ def backfill(account_id, start_time=0):
     backfill_start_time = datetime.now()
 
     account = ZendeskAccount.query.get(account_id)
-    scoped_session = account.organization.create_scoped_session()
-    session = scoped_session()
+    Session = account.organization.create_scoped_session()
+    session = Session()
 
     # 1. backfill tickets, users, and groups
     user_results = []
@@ -38,8 +38,8 @@ def backfill(account_id, start_time=0):
         resp = requests.get(account.base_url +
                             '/incremental/tickets.json?include=users,groups,organizations&start_time={start_time}'.format(
                                 start_time=start_time), auth=(account.auth))
-        if resp.status_code != 200:
-            break
+        resp.raise_for_status()
+
         logger.info('request completed in %d seconds' %
                     (datetime.now().timestamp() - start))
         logger.info('processing %d tickets' % resp.json()['count'])
@@ -87,6 +87,7 @@ def backfill(account_id, start_time=0):
     session.add_all(group_results)
     session.add_all(ticket_results)
     session.commit()
+
     comments = []
     tickets = session.query(Ticket).all()
 
@@ -97,13 +98,14 @@ def backfill(account_id, start_time=0):
 
     logger.info('Backfill complete, took %d seconds' %
                 int((datetime.now() - backfill_start_time).total_seconds()))
+    Session.remove()
 
 
 @celery.task(autoretry_for=(requests.HTTPError, ), retry_backoff=15, retry_kwargs={'max_retries': 3})
 def backfill_ticket_comments(account_id, ticket_id):
     account = ZendeskAccount.query.get(account_id)
-    scoped_session = account.organization.create_scoped_session()
-    session = scoped_session()
+    Session = account.organization.create_scoped_session()
+    session = Session()
 
     ticket = session.query(Ticket).get(ticket_id)
     query = session.query(func.max(TicketComment.created_at))
@@ -123,3 +125,4 @@ def backfill_ticket_comments(account_id, ticket_id):
     session.add_all(users)
     session.add_all(comments)
     session.commit()
+    Session.remove()
