@@ -1,124 +1,139 @@
 from datetime import datetime
-import requests
 import os
 
 from flask import url_for
-from flask_sqlalchemy import camel_to_snake_case
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from requests.exceptions import HTTPError
 from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.ext.declarative import as_declarative
 from sqlalchemy.orm import backref, relationship
-from sqlalchemy.schema import MetaData, ForeignKey
-from sqlalchemy.ext.declarative import as_declarative, declared_attr
+from sqlalchemy.schema import ForeignKey, MetaData
 from sqlalchemy.types import BigInteger, Boolean, Text, Integer, DateTime
 
+from pipet.utils import PipetBase
+
+
 SCHEMANAME = 'zendesk'
-ZENDESK_MODELS = {}
+CLASS_REGISTRY = {}
 
 
-@as_declarative(metadata=MetaData(schema=SCHEMANAME), class_registry=ZENDESK_MODELS)
-class Base(object):
-    @declared_attr
-    def __tablename__(cls):
-        return camel_to_snake_case(cls.__name__)
-
+@as_declarative(metadata=MetaData(schema=SCHEMANAME), class_registry=CLASS_REGISTRY)
+class Base(PipetBase):
     id = Column(BigInteger, primary_key=True)
 
     @classmethod
-    def create_or_update(cls, session, data, account):
+    def parse(cls, data):
+        d = {}
+        for field, column in cls.__table__._columns.items():
+            # metadata is not a valid column name
+            value = data.get('meta' if field == 'metadata' else field, None)
+            if not value:
+                continue
+            elif isinstance(column.type, DateTime):
+                # We assume GMT
+                d[field] = datetime.strptime(value[:19], '%Y-%m-%dT%H:%M:%S')
+            else:
+                d[field] = value
+        return d
+
+    @classmethod
+    def process_response(cls, response):
+        raise NotImplemented
+
+    @classmethod
+    def sync(cls, account):
         """
-        Args:
-            cls (Group):
-            data (dict): JSON
         Return:
-            tuple: (object, created)
+            statements (list): list of insert insertments
+            cursor (str): cursor for sync
+            has_more (bool): continue sync'ing
         """
-        inst = session.query(cls).get(data['id'])
-        if inst:
-            return inst.load_json(data), False
+        statements = []
+        cursor = account.cursors.get(cls.__tablename__, '0')
 
-        inst = cls()
-        return inst.load_json(data), True
+        resp = account.get(cls.endpoint.format(cursor=cursor))
 
-    def __hash__(self):
-        return hash(self.id)
+        try:
+            resp.raise_for_status()
+        except HTTPError:
+            if resp.status_code == 429:
+                return statements, cursor, False
+            raise HTTPError
 
-    def fetch(self, account):
-        return requests.get(account.base_url + '/{endpoint}/{id}.json'.format(endpoint=self.endpoint, id=self.id),
-                            auth=account.auth)
-
-    def load_json(self, data):
-        for field, value in data.items():
-            if field in self.__table__._columns.keys():
-                if isinstance(self.__table__._columns.get(field).type, DateTime) and value:
-                    setattr(self, field, datetime.strptime(
-                        value, '%Y-%m-%dT%H:%M:%SZ'))
-                elif isinstance(self.__table__._columns.get(field).type, ARRAY):
-                    setattr(self, field, sorted(value))
-                elif isinstance(self.__table__._columns.get(field).type, BigInteger) and \
-                        (self.__table__._columns.get(field).foreign_keys or field == 'id'):
-                    setattr(self, field, value)
-                else:
-                    setattr(self, field, value)
-        return self
+        statements += cls.process_response(resp)
+        cursor = resp.json()['end_time']
+        return statements, cursor, resp.json()['count'] == 1000
 
 
-class TicketComment(Base):
-    """Cannot be deleted (unless ticket is deleted)"""
+class UserIdentity(Base):
+    url = Column(Text)
+    user_id = Column(BigInteger)
     type = Column(Text)
-    body = Column(Text)
-    public = Column(Boolean)
+    value = Column(Text)
+    verified = Column(Boolean)
+    primary = Column(Boolean)
     created_at = Column(DateTime)
-    author_id = Column(BigInteger, ForeignKey(
-        'user.id', deferrable=True, initially='DEFERRED'))
-    via = Column(JSONB)
-    meta = Column(JSONB, name='metadata')
-    ticket_id = Column(BigInteger, ForeignKey(
-        'ticket.id', deferrable=True, initially='DEFERRED'))
+    updated_at = Column(DateTime)
+    undelivered_count = Column(BigInteger)
+    deliverable_sate = Column(Text)
 
-    # attachments
-
-    ticket = relationship(
-        'Ticket', backref=backref('comments', lazy='dynamic'))
-    author = relationship('User', backref=backref('comments', lazy='dynamic'))
+    @classmethod
+    def sync(cls, account):
+        # synced from User.sync
+        return [], None, False
 
 
 class User(Base):
-    endpoint = 'users'
-
     email = Column(Text)
     name = Column(Text)
     active = Column(Boolean)
     alias = Column(Text)
     chat_only = Column(Boolean)
     created_at = Column(DateTime)
+    custom_role_id = Column(BigInteger)
+    role_type = Column(BigInteger)
     details = Column(Text)
     external_id = Column(Text)
     last_login_at = Column(DateTime)
     locale = Column(Text)
-    locale_id = Column(Integer)
+    locale_id = Column(BigInteger)
     moderator = Column(Boolean)
     notes = Column(Text)
+    only_private_comments = Column(Boolean)
+    organization_id = Column(BigInteger)
+    default_group_id = Column(BigInteger)
     phone = Column(Text)
+    shared_phone_number = Column(Boolean)
+    # photo
+    restricted_agent = Column(Boolean)
     role = Column(Text)
+    shared = Column(Boolean)
+    shared_agent = Column(Boolean)
+    signature = Column(Text)
+    suspended = Column(Boolean)
     tags = Column(ARRAY(Text, dimensions=1))
+    ticket_restriction = Column(Text)
     time_zone = Column(Text)
+    two_factor_auth_enabled = Column(Boolean)
     updated_at = Column(DateTime)
     verified = Column(Boolean)
+    url = Column(Text)
+    user_fields = Column(JSONB)
+    verified = Column(Boolean)
 
-    # only_private_comments = Column(Boolean)
-    # url = Column(Text)
-    # two_factor_auth_enabled = Column(Boolean)
-    # ticket_restriction = Column(Text)
-    # suspended = Column(Boolean)
-    # signature = Column(Text)
-    # shared = Column(Boolean)
-    # shared_agent = Column(Boolean)
-    # restricted_agent
-    # organization_id = Column(BigInteger)
-    # default_group_id = Column(BigInteger)
-    # custom_role_id = Column(Integer)
-    # photo
-    # user_fields
+    endpoint = '/api/v2/incremental/users.json?start_time={cursor}&include=identities'
+
+    @classmethod
+    def process_response(cls, response):
+        statements = []
+        for data in response.json().get('users', []):
+            statements.append(cls.upsert(cls.parse(data)))
+
+        for identity_data in response.json().get('identities', []):
+            statements.append(UserIdentity.upsert(
+                UserIdentity.parse(identity_data)))
+
+        return statements
 
 
 class Group(Base):
@@ -130,10 +145,27 @@ class Group(Base):
     updated_at = Column(DateTime)
     url = Column(Text)
 
+    endpoint = '/api/v2/groups.json'
+
+    @classmethod
+    def process_response(cls, response):
+        statements = []
+        for data in response.json().get('groups', []):
+            statements.append(cls.upsert(cls.parse(data)))
+        return statements
+
+    @classmethod
+    def sync(cls, account):
+        """
+        Returns:
+            (list): statements to execute
+            (str): cursor
+            (bool): whether to call again immediately
+        """
+        return [], None, False
+
 
 class Organization(Base):
-    endpoint = 'organizations'
-
     external_id = Column(Text)
     name = Column(Text)
     created_at = Column(DateTime)
@@ -148,10 +180,40 @@ class Organization(Base):
     tags = Column(ARRAY(Text, dimensions=1))
     organization_fields = Column(JSONB)
 
+    endpoint = '/api/v2/incremental/organizations.json?start_time={cursor}'
+
+    @classmethod
+    def process_response(cls, response):
+        statements = []
+        for data in response.json().get('organizations', []):
+            statements.append(cls.upsert(cls.parse(data)))
+
+        return statements
+
+
+# class TicketAudit(Base):
+#     ticket_id = Column(BigInteger, ForeignKey(
+#         'ticket.id', deferrable=True, initially='DEFERRED'))
+#     meta = Column(JSONB, name='metadata')
+#     via = Column(JSONB)
+#     created_at = Column(DateTime)
+#     author_id = Column(BigInteger, ForeignKey(
+#         'user.id', deferrable=True, initially='DEFERRED'))
+#     events = Column(JSONB)
+
+#     endpoint = '/api/v2/incremental/ticket_events.json?start_time={cursor}&include=comment_events'
+
+#     @classmethod
+#     def process_response(cls, response):
+#         statements = []
+#         for data in response.json()['ticket_events']:
+#             data['events'] = data['child_events']
+#             statements.append(cls.upsert(cls.parse(data)))
+
+#         return statements
+
 
 class Ticket(Base):
-    endpoint = 'tickets'
-
     """Can be deleted by admins"""
     created_at = Column(DateTime)
     updated_at = Column(DateTime)
@@ -184,35 +246,15 @@ class Ticket(Base):
     # allow_channelback
     # is_public
 
-    def update(self, session, extended_json, account):
-        """Updates from API"""
-        inst_list = [self]
+    endpoint = '/api/v2/incremental/tickets.json?start_time={cursor}&include=groups'
 
-        for user_data in extended_json['users']:
-            user, _ = User.create_or_update(session, user_data, account)
-            inst_list.append(user)
+    @classmethod
+    def process_response(cls, response):
+        statements = []
+        for data in response.json().get('tickets', []):
+            statements.append(cls.upsert(cls.parse(data)))
 
-        for group_data in extended_json['groups']:
-            group, _ = Group.create_or_update(
-                session, group_data, account)
-            inst_list.append(group)
+        for data in response.json().get('groups', []):
+            statements.append(Group.upsert(Group.parse(data)))
 
-        return inst_list
-
-    def update_comments(self, session, comments_json, account):
-        comments = []
-        users = []
-        for comment_json in comments_json:
-            if not session.query(User).get(comment_json['author_id']) and comment_json['author_id'] not in [user.id for user in users]:
-                user = User()
-                user.id = comment_json['author_id']
-                user_resp = user.fetch(account)
-                user.load_json(user_resp.json())
-                users.append(user)
-
-            comment, _ = TicketComment.create_or_update(
-                session, comment_json, account)
-            comment.ticket_id = self.id
-            comments.append(comment)
-
-        return comments, users
+        return statements

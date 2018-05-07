@@ -2,6 +2,9 @@ from flask import Blueprint, redirect, request, Response, render_template, url_f
 from flask_login import current_user, login_required
 import stripe
 
+from pipet import db
+from pipet.sources.stripe import StripeAccount
+from pipet.sources.stripe.forms import CreateAccountForm
 from pipet.sources.stripe.models import SCHEMANAME
 
 
@@ -17,8 +20,25 @@ def index():
 @blueprint.route('/activate', methods=['GET', 'POST'])
 @login_required
 def activate():
-    """Instructions on getting webhooks set up"""
-    return
+    session = current_user.organization.create_session()
+    form = CreateAccountForm()
+    account = current_user.organization.stripe_account
+    if form.validate_on_submit():
+        if not account:
+            account = StripeAccount()
+
+        account.api_key = form.api_key.data
+        account.organization_id = current_user.organization.id
+
+        db.session.add(account)
+        db.session.commit()
+
+        return redirect(url_for('stripe.index'))
+
+    if account:
+        form.api_key.data = account.api_key
+
+    return render_template('stripe/activate.html', form=form)
 
 
 @blueprint.route('/deactivate')
@@ -30,32 +50,7 @@ def deactivate():
 @blueprint.route('/reset')
 @login_required
 def reset():
-    return
-
-
-@blueprint.route('/hook', methods=['POST'])
-def hook():
-    # data = request.get_json()
-    # assert data['api_version'] == STRIPE_API_VERSION
-
-    # tablenames = {m.__tablename__: m for c, m in STRIPE_MODELS.items() \
-    #     if isinstance(m, sqlalchemy.ext.declarative.api.DeclarativeMeta)}
-    # obj_json = data['data']['object']
-    # obj_type = obj_json['object']
-
-    # if obj_type in tablenames:
-    #     model = tablenames[obj_type]
-    #     event_type = data['type'].split('.')
-    #     i = session.query(model).get(obj_json['id'])
-
-    #     if event_type[-1] == 'deleted':
-    #         i.delete()
-    #     elif event_type[-1] == 'created':
-    #         # create object
-    #         i = model()
-
-    #     i.load_json(obj_json)
-    #     session.add(i)
-
-    # session.commit()
-    return '', 201
+    session = current_user.organization.create_session()
+    current_user.organization.stripe_account.drop_all(session)
+    current_user.organization.stripe_account.create_all(session)
+    return redirect(url_for('stripe.index'))

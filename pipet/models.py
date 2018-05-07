@@ -53,7 +53,7 @@ class Organization(db.Model):
     name = db.Column(db.Text)
     database_credentials = db.Column(db.Text)
 
-    def create_scoped_session(self):
-        engine = create_engine(self.database_credentials, echo=False)
+    def create_session(self):
+        engine = create_engine(self.database_credentials, use_batch_mode=True)
         session_factory = sessionmaker(bind=engine)
-        return scoped_session(session_factory)
+        return scoped_session(session_factory)()

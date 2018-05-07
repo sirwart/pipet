@@ -2,6 +2,7 @@
 import logging
 import os
 
+from dotenv import load_dotenv
 from flask import Flask
 from flask_login import LoginManager
 from flask_sqlalchemy import SQLAlchemy
@@ -21,6 +22,7 @@ class Base(Model):
     created = Column(DateTime, server_default=func.now(), nullable=False)
 
 
+load_dotenv()
 csrf = CSRFProtect()
 db = SQLAlchemy(model_class=Base)
 login_manager = LoginManager()
@@ -38,13 +40,20 @@ app.config['GOOGLE_PICKER_API_KEY'] = os.environ.get('GOOGLE_PICKER_API_KEY')
 app.config['WEBPACK_MANIFEST_PATH'] = 'static/build/manifest.json'
 app.secret_key = os.environ.get('FLASK_SECRET_KEY')
 
-celery = make_celery(app)
 csrf.init_app(app)
 db.init_app(app)
 sentry.init_app(app)
 login_manager.init_app(app)
 login_manager.login_view = 'index'
 
+celery = make_celery(app)
+celery.conf.ONCE = {
+    'backend': 'celery_once.backends.Redis',
+    'settings': {
+        'url': os.environ.get('REDIS_URL'),
+        'default_timeout': 60 * 60,
+    }
+}
 
 from pipet.models import User
 
@@ -66,3 +75,16 @@ from pipet.sources.stripe import StripeAccount
 from pipet.sources.stripe.views import blueprint as stripe_blueprint
 
 app.register_blueprint(stripe_blueprint, url_prefix='/stripe')
+
+from pipet.sources.zendesk.tasks import sync as sync_zendesk
+
+
+@celery.task
+def poll():
+    for account in ZendeskAccount.query.all():
+        sync_zendesk.delay(account.id)
+
+
+@celery.on_after_configure.connect
+def setup_periodic_tasks(sender, **kwargs):
+    sender.add_periodic_task(60, poll.s(), name='add every 10')

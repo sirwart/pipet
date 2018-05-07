@@ -1,50 +1,39 @@
+from celery_once import QueueOnce
+from inspect import isclass
+from sqlalchemy.orm.attributes import flag_modified
 import stripe
 import requests
 
-from pipet import session
+from pipet import celery, db
+from pipet.sources.stripe import StripeAccount
 from pipet.sources.stripe.models import (
-    Account,
-    Source,
-    BalanceTransaction,
-    Charge,
-    Coupon,
-    Customer,
-    Dispute,
-    Payout,
-    Plan,
-    Refund,
-    Coupon,
-    Discount,
-    Invoice,
-    InvoiceItem,
-    Plan,
-    Subscription,
-    SubscriptionItem,
-    Transfer,
+    Base,
+    CLASS_REGISTRY,
 )
 
-def backfill_coupons(account_id):
-    account = session.query(Account).get(account_id)
 
-    coupons = account.client.Coupon.list(limit=100)
-    for coupon in coupons.auto_paging_iter():
-        pass
+@celery.task(base=QueueOnce)
+def sync(account_id):
+    account = StripeAccount.query.get(account_id)
+    session = account.organization.create_session()
 
-    sources = stripe.Source.list(limit=100)
-    for source in sources.auto_paging_iter():
-        pass
+    for cls in [m for n, m in CLASS_REGISTRY.items() if isclass(m) and issubclass(m, Base)]:
+        # Make these parallel to speed up execution
+        while True:
+            conn = session.connection()
+            statements, cursor, has_more = cls.sync(account)
+            print(cls)
+            print(statements)
+            account.cursors[cls.__tablename__] = cursor
+            flag_modified(account, 'cursors')
 
-    charges = stripe.Charge.list(limit=100)
-    for charge in charges.auto_paging_iter():
-        pass
+            for statement in statements:
+                conn.execute(statement)
 
-    stripe_classes = [Source, BalanceTransaction, Payout, Transfer, TransferReversal, Customer, Coupon, Plan,
-        Subscription, SubscriptionItem, Discount, Invoice, Charge, Refund, Dispute, InvoiceItem]
+            session.commit()
 
-    for stripe_class in stripe_classes:
-        objs = getattr(stripe, stripe_class).list(limit=100)
-        for result_obj in objs.auto_paging_iter():
-            inst = stripe_class()
-            inst.load_json(result_obj.json())
-            session.add(inst)
-        session.commit()
+            db.session.add(account)
+            db.session.commit()
+
+            if not has_more:
+                break

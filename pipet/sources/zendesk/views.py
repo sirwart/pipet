@@ -9,7 +9,7 @@ from pipet import db
 from pipet.sources.zendesk import ZendeskAccount
 from pipet.sources.zendesk.forms import CreateAccountForm, DestroyAccountForm
 from pipet.sources.zendesk.models import Base, SCHEMANAME
-from pipet.sources.zendesk.tasks import backfill
+from pipet.sources.zendesk.tasks import sync
 
 
 blueprint = Blueprint(SCHEMANAME, __name__, template_folder='templates')
@@ -24,8 +24,7 @@ def index():
 @blueprint.route('/activate', methods=['GET', 'POST'])
 @login_required
 def activate():
-    scoped_session = current_user.organization.create_scoped_session()
-    session = scoped_session()
+    session = current_user.organization.create_session()
     form = CreateAccountForm(obj=current_user.organization.zendesk_account)
     account = current_user.organization.zendesk_account
     if form.validate_on_submit():
@@ -39,21 +38,6 @@ def activate():
 
         db.session.add(account)
         db.session.commit()
-
-        if not account.target_exists:
-            account.create_target()
-        if not account.trigger_exists:
-            account.create_trigger()
-        if not account.initialized:
-            account.create_all(session)
-
-        db.session.add(account)
-        db.session.commit()
-
-        # if form.backfill.data:
-        #     t = Thread(target=backfill_tickets, args=(account.id, ))
-        #     t.setDaemon(True)
-        #     t.start()
 
         return redirect(url_for('zendesk.index'))
 
@@ -84,11 +68,9 @@ def deactivate():
 @blueprint.route('/reset')
 @login_required
 def reset():
-    scoped_session = current_user.organization.create_scoped_session()
-    session = scoped_session()
+    session = current_user.organization.create_session()
     current_user.organization.zendesk_account.drop_all(session)
     current_user.organization.zendesk_account.create_all(session)
-    backfill.delay(current_user.organization.zendesk_account.id)
     return redirect(url_for('zendesk.index'))
 
 
