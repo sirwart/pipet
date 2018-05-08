@@ -66,6 +66,10 @@ def load_user(user_id):
 from pipet import views  # NOQA
 from pipet import cli  # NOQA
 
+# from pipet.api.views import blueprint as api_blueprint
+
+# app.register_blueprint(api_blueprint, url_prefix='/api')
+
 from pipet.sources.zendesk import ZendeskAccount
 from pipet.sources.zendesk.views import blueprint as zendesk_blueprint
 
@@ -77,14 +81,3 @@ from pipet.sources.stripe.views import blueprint as stripe_blueprint
 app.register_blueprint(stripe_blueprint, url_prefix='/stripe')
 
 from pipet.sources.zendesk.tasks import sync as sync_zendesk
-
-
-@celery.task
-def poll():
-    for account in ZendeskAccount.query.all():
-        sync_zendesk.delay(account.id)
-
-
-@celery.on_after_configure.connect
-def setup_periodic_tasks(sender, **kwargs):
-    sender.add_periodic_task(60, poll.s(), name='add every 10')

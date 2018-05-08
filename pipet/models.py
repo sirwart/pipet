@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.types import Integer
 
 from pipet import app, db
+from pipet.sources import Base, SCHEMANAME
 
 
 class User(db.Model, UserMixin):
@@ -57,3 +58,15 @@ class Organization(db.Model):
         engine = create_engine(self.database_credentials, use_batch_mode=True)
         session_factory = sessionmaker(bind=engine)
         return scoped_session(session_factory)()
+
+    def create_all(self, session):
+        session.bind.execute(
+            DDL('CREATE SCHEMA IF NOT EXISTS {schema}'.format(schema=SCHEMANAME)))
+        Base.metadata.create_all(session.bind)
+        self.initialized = True
+
+    def drop_all(self, session):
+        Base.metadata.drop_all(session.bind)
+        session.bind.execute(
+            DDL('DROP SCHEMA IF EXISTS {schema}'.format(schema=SCHEMANAME)))
+        self.initialized = False

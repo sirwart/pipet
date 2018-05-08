@@ -25,11 +25,3 @@ class PipetBase():
 
     def __hash__(self):
         return hash(self.id)
-
-    @classmethod
-    def referred_tables(cls):
-        result = []
-        for column in cls.__table__.columns:
-            for foreign_key in column.foreign_keys:
-                result.append(foreign_key.constraint.referred_table)
-        return list(set(result))
