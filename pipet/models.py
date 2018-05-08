@@ -4,6 +4,7 @@ import uuid
 from flask import url_for
 from flask_login import UserMixin
 from sqlalchemy import Column, create_engine
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.types import Integer
 
@@ -51,8 +52,10 @@ class User(db.Model, UserMixin):
 
 
 class Organization(db.Model):
-    name = db.Column(db.Text)
+    name = db.Column(db.Text, unique=True, nullable=False)
     database_credentials = db.Column(db.Text)
+    api_key = db.Column(UUID(as_uuid=True), unique=True,
+                        nullable=False, default=uuid.uuid4)
 
     def create_session(self):
         engine = create_engine(self.database_credentials, use_batch_mode=True)
