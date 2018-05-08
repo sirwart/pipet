@@ -7,7 +7,7 @@ from sqlalchemy import Column
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.ext.declarative import as_declarative
 from sqlalchemy.orm import backref, relationship
-from sqlalchemy.schema import ForeignKey, MetaData
+from sqlalchemy.schema import MetaData
 from sqlalchemy.types import BigInteger, Boolean, Text, Integer, DateTime
 
 from pipet.utils import PipetBase
@@ -173,8 +173,7 @@ class Organization(Base):
     domain_names = Column(ARRAY(Text, dimensions=1))
     details = Column(Text)
     notes = Column(Text)
-    group_id = Column(BigInteger, ForeignKey(
-        'group.id', deferrable=True, initially='DEFERRED'))
+    group_id = Column(BigInteger)
     shared_tickets = Column(Boolean)
     shared_comments = Column(Boolean)
     tags = Column(ARRAY(Text, dimensions=1))
@@ -192,13 +191,11 @@ class Organization(Base):
 
 
 # class TicketAudit(Base):
-#     ticket_id = Column(BigInteger, ForeignKey(
-#         'ticket.id', deferrable=True, initially='DEFERRED'))
+#     ticket_id = Column(BigInteger)
 #     meta = Column(JSONB, name='metadata')
 #     via = Column(JSONB)
 #     created_at = Column(DateTime)
-#     author_id = Column(BigInteger, ForeignKey(
-#         'user.id', deferrable=True, initially='DEFERRED'))
+#     author_id = Column(BigInteger)
 #     events = Column(JSONB)
 
 #     endpoint = '/api/v2/incremental/ticket_events.json?start_time={cursor}&include=comment_events'
@@ -224,12 +221,9 @@ class Ticket(Base):
     priority = Column(Text)
     status = Column(Text)
     recipient = Column(Text)
-    requester_id = Column(BigInteger, ForeignKey(
-        'user.id', deferrable=True, initially='DEFERRED'))
-    submitter_id = Column(BigInteger, ForeignKey(
-        'user.id', deferrable=True, initially='DEFERRED'))
-    group_id = Column(BigInteger, ForeignKey(
-        'group.id', deferrable=True, initially='DEFERRED'))
+    requester_id = Column(BigInteger)
+    submitter_id = Column(BigInteger)
+    group_id = Column(BigInteger)
     collaborator_ids = Column(ARRAY(BigInteger, dimensions=1))
     has_incidents = Column(Boolean)
     due_at = Column(DateTime)
@@ -237,7 +231,7 @@ class Ticket(Base):
     via = Column(JSONB)
     followup_ids = Column(ARRAY(BigInteger, dimensions=1))
 
-    # forum_topic_id = Column(BigInteger, ForeignKey('')), deferrable=True, initially='DEFERRED'
+    # forum_topic_id = Column(BigInteger)
     # satisfaction_rating = Column(JSONB)
     # sharing_agreement_ids = Column(ARRAY(BigInteger, dimensions=1))
     # custom_fields
