@@ -202,12 +202,12 @@ class Dispute(Base):
 class Payout(Base):
     amount = Column(BigInteger)
     arrival_date = Column(DateTime)
-    balance_transaction = Column(Text)
+    balance_transaction_id = Column(Text)
     created = Column(DateTime)
     currency = Column(Text)
     description = Column(Text)
-    destination = Column(Text)
-    failure_balance_transaction = Column(
+    destination_id = Column(Text)
+    failure_balance_transaction_id = Column(
         Text)
     failure_code = Column(Text)
     failure_message = Column(Text)
@@ -219,6 +219,26 @@ class Payout(Base):
     type = Column(Text)
 
     endpoint = '/v1/payouts'
+
+
+class Product(Base):
+    active = Column(Boolean)
+    attributes = Column(ARRAY(Text, dimensions=1))
+    caption = Column(Text)
+    created = Column(DateTime)
+    deactive_on = Column(ARRAY(Text, dimensions=1))
+    description = Column(Text)
+    images = Column(ARRAY(Text, dimensions=1))
+    meta = Column(JSONB, name='metadata')
+    name = Column(Text)
+    package_dimensions = Column(JSONB)
+    shippable = Column(Boolean)
+    skus = Column(ARRAY(Text, dimensions=1))
+    statement_descriptor = Column(Text)
+    type = Column(Text)
+    unit_label = Column(Text)
+    updated = Column(DateTime)
+    url = Column(Text)
 
 
 class Refund(Base):
@@ -350,15 +370,21 @@ class InvoiceItem(Base):
 
 
 class Plan(Base):
+    aggregate_usage = Column(Text)
     amount = Column(BigInteger)
+    billing_scheme = Column(Text)
     created = Column(DateTime)
     currency = Column(Text)
     interval = Column(Text)
     interval_count = Column(BigInteger)
     meta = Column(JSONB, name='metadata')
-    name = Column(Text)
-    statement_descriptor = Column(Text)
+    nickname = Column(Text)
+    product_id = Column(Text)
+    tiers = Column(JSONB)
+    tiers_mode = Column(Text)
+    transform_usage = Column(JSONB)
     trial_period_days = Column(BigInteger)
+    usage_type = Column(Text)
 
     endpoint = '/v1/plans'
 
@@ -428,6 +454,7 @@ class SubscriptionItem(Base):
     created = Column(DateTime)
     plan = Column(Text)
     quantity = Column(BigInteger)
+    subscription_id = Column(Text)
 
     endpoint = '/v1/subscription_items'
 
