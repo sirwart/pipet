@@ -32,8 +32,10 @@ class Base(PipetBase):
                 data_field = 'metadata'
             elif field[-3:] == '_id':
                 data_field = field[:-3]
+            else:
+                data_field = field
             value = data.get(data_field, None)
-            if not value or isinstance(column, Column):
+            if not value or not isinstance(column, Column):
                 continue
             elif isinstance(column.type, DateTime):
                 # We assume GMT
@@ -119,8 +121,9 @@ class BalanceTransaction(Base):
         for data in response.json()['data']:
             cursor = data['id']
             statements.append(cls.upsert(cls.parse(data)))
-            statements.append(cls.fee_details.insert().values(
-                response.json()['data']['fee_details']))
+            if data['fee_details']:
+                statements.append(cls.fee_details.insert().values(
+                    data['fee_details']))
 
         return statements, cursor
 
