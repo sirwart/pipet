@@ -2,7 +2,7 @@ from datetime import datetime
 
 from flask_sqlalchemy import camel_to_snake_case
 from requests.exceptions import HTTPError
-from sqlalchemy import Column
+from sqlalchemy import Column, Table
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.ext.declarative import as_declarative, declared_attr
 from sqlalchemy.orm import relationship
@@ -13,13 +13,13 @@ import stripe
 from pipet.utils import PipetBase
 
 
-STRIPE_API_KEY_URL = 'https://dashboard.stripe.com/account/apikeys'
 STRIPE_API_VERSION = '2018-02-28'
 SCHEMANAME = 'stripe'
 CLASS_REGISTRY = {}
+metadata = MetaData(schema=SCHEMANAME)
 
 
-@as_declarative(metadata=MetaData(schema=SCHEMANAME), class_registry=CLASS_REGISTRY)
+@as_declarative(metadata=metadata, class_registry=CLASS_REGISTRY)
 class Base(PipetBase):
     id = Column(Text, primary_key=True)
 
@@ -29,7 +29,7 @@ class Base(PipetBase):
         for field, column in cls.__table__._columns.items():
             # metadata is not a valid column name
             value = data.get('meta' if field == 'metadata' else field, None)
-            if not value:
+            if not value or isinstance(column, Column):
                 continue
             elif isinstance(column.type, DateTime):
                 # We assume GMT
@@ -92,13 +92,32 @@ class BalanceTransaction(Base):
     description = Column(Text)
     exchange_rate = Column(Float)
     fee = Column(BigInteger)
-    fee_details = Column(JSONB)
     net = Column(BigInteger)
     source = Column(Text)
     status = Column(Text)
     type = Column(Text)
 
+    fee_details = Table('balance_transaction_fee_details', metadata,
+                        Column('balance_transaction_id', Text),
+                        Column('amount', BigInteger),
+                        Column('application', Text),
+                        Column('currency', Text),
+                        Column('description', Text),
+                        Column('type', Text),
+                        )
+
     endpoint = '/v1/balance/history'
+
+    @classmethod
+    def process_response(cls, response, cursor=None):
+        statements = []
+        for data in response.json()['data']:
+            cursor = data['id']
+            statements.append(cls.upsert(cls.parse(data)))
+            statements.append(cls.fee_details.insert().values(
+                response.json()['data']['fee_details']))
+
+        return statements, cursor
 
 
 class Charge(Base):
