@@ -28,7 +28,11 @@ class Base(PipetBase):
         d = {}
         for field, column in cls.__table__._columns.items():
             # metadata is not a valid column name
-            value = data.get('meta' if field == 'metadata' else field, None)
+            if field == 'meta':
+                data_field = 'metadata'
+            elif field[-3:] == '_id':
+                data_field = field[:-3]
+            value = data.get(data_field, None)
             if not value or isinstance(column, Column):
                 continue
             elif isinstance(column.type, DateTime):
@@ -40,6 +44,9 @@ class Base(PipetBase):
 
     @classmethod
     def sync(cls, account):
+        if not cls.endpoint:
+            return [], None, False
+
         statements = []
         cursor = account.cursors.get(cls.__tablename__)
         resp = account.get(cls.endpoint, params={'starting_after': cursor})
@@ -79,9 +86,7 @@ class Source(Base):
     type = Column(Text)
     usage = Column(Text)
 
-    @classmethod
-    def sync(cls, account):
-        return [], None, False
+    endpoint = None
 
 
 class BalanceTransaction(Base):
@@ -125,29 +130,30 @@ class Charge(Base):
     amount_refunded = Column(BigInteger)
     application = Column(Text)
     application_fee = Column(Text)
-    balance_transaction = Column(Text)
+    balance_transaction_id = Column(Text)
     captured = Column(Boolean)
     created = Column(DateTime)
     currency = Column(Text)
-    customer = Column(Text)
+    customer_id = Column(Text)
     description = Column(Text)
+    dispute_id = Column(Text)
+    destination_id = Column(Text)
     failure_code = Column(Text)
     failure_message = Column(Text)
     fraud_details = Column(JSONB)
-    invoice = Column(Text)
+    invoice_id = Column(Text)
     meta = Column(JSONB, name='metadata')
     on_behalf_of = Column(Text)
-    order = Column(Text)
+    order_id = Column(Text)
     outcome = Column(JSONB)
     paid = Column(Boolean)
     receipt_email = Column(Text)
     receipt_number = Column(Text)
     refunded = Column(Boolean)
-    refunds = Column(JSONB)
     review = Column(Text)
     shipping = Column(JSONB)
     source = Column(JSONB)
-    source_transfer = Column(Text, nullable=True)
+    source_transfer_id = Column(Text, nullable=True)
     statement_descriptor = Column(Text)
     status = Column(Text)
     transfer = Column(Text)
@@ -168,6 +174,8 @@ class Customer(Base):
     meta = Column(JSONB, name='metadata')
     shipping = Column(JSONB)
 
+    outcome = Table
+
     endpoint = '/v1/customers'
 
 
@@ -175,7 +183,7 @@ class Dispute(Base):
     amount = Column(BigInteger)
     balance_transaction = Column(Text)
     balance_transactions = Column(ARRAY(Text, dimensions=1))
-    charge = Column(Text)
+    charge_id = Column(Text)
     created = Column(DateTime)
     currency = Column(Text)
     evidence = Column(JSONB)
@@ -212,11 +220,13 @@ class Payout(Base):
 
 class Refund(Base):
     amount = Column(BigInteger)
-    balance_transaction = Column(Text)
-    charge = Column(Text)
+    balance_transaction_id = Column(Text)
+    charge_id = Column(Text)
     created = Column(DateTime)
     currency = Column(Text)
-    description = Column(Text)
+    failure_balance_transaction = Column(Text)
+    failure_reason = Column(Text)
+    meta = Column(JSONB)
     reason = Column(Text)
     receipt_number = Column(Text)
     status = Column(Text)
@@ -246,23 +256,25 @@ class Discount(Base):
     end = Column(DateTime)
     start = Column(DateTime)
 
-    @classmethod
-    def sync(cls, account):
-        return [], None, False
+    endpoint = None
 
 
 class Invoice(Base):
     amount_due = Column(BigInteger)
+    amount_paid = Column(BigInteger)
+    amount_remaining = Column(BigInteger)
     application_fee = Column(BigInteger)
     attempt_count = Column(BigInteger)
     attempted = Column(Boolean)
-    charge = Column(Text)
+    billing = Column(Text)
+    charge_id = Column(Text)
     closed = Column(Boolean)
     currency = Column(Text)
-    customer = Column(Text)
+    customer_id = Column(Text)
     date = Column(DateTime)
     description = Column(Text)
-    discount = Column(Text)
+    discount = Column(JSONB)
+    due_date = Column(DateTime)
     ending_balance = Column(BigInteger)
     forgiven = Column(Boolean)
     meta = Column(JSONB, name='metadata')
@@ -273,7 +285,7 @@ class Invoice(Base):
     receipt_number = Column(Text)
     starting_balance = Column(BigInteger)
     statement_descriptor = Column(Text)
-    subscription = Column(Text)
+    subscription_id = Column(Text)
     subscription_proration_date = Column(BigInteger)
     subtotal = Column(BigInteger)
     tax = Column(BigInteger)
@@ -283,22 +295,53 @@ class Invoice(Base):
 
     endpoint = '/v1/invoices'
 
+    @classmethod
+    def process_response(cls, response, cursor=None):
+        statements = []
+        for data in response.json()['data']:
+            cursor = data['id']
+            statements.append(cls.upsert(cls.parse(data)))
+
+            for line_data in data['lines']['data']:
+                statements.append(cls.upsert(cls.parse(line_data)))
+
+        return statements, cursor
+
+
+class InvoiceLineItem(Base):
+    amount = Column(BigInteger)
+    currency = Column(Text)
+    description = Column(Text)
+    discountable = Column(Text)
+    invoice_item_id = Column(Text)
+    meta = Column(JSONB, name='metadata')
+    period = Column(JSONB)
+    plan_id = Column(Text)
+    proration = Column(Boolean)
+    quantity = Column(BigInteger)
+    subscription_id = Column(Text)
+    subscription_item_id = Column(Text)
+    type = Column(Text)
+
+    endpoint = None
+
 
 class InvoiceItem(Base):
     amount = Column(BigInteger)
     currency = Column(Text)
-    customer = Column(Text)
+    customer_id = Column(Text)
     date = Column(DateTime)
     description = Column(Text)
     discountable = Column(Boolean)
-    invoice = Column(Text)
+    invoice_id = Column(Text)
     meta = Column(JSONB, name='metadata')
     period = Column(JSONB)
-    plan = Column(Text)
+    plan_id = Column(Text)
     proration = Column(Boolean)
     quantity = Column(BigInteger)
     subscription = Column(Text)
     subscription_item = Column(Text)
+    unit_amount = Column(BigInteger)
 
     endpoint = '/v1/invoiceitems'
 
@@ -325,7 +368,7 @@ class Subscription(Base):
     current_period_end = Column(DateTime)
     current_period_start = Column(DateTime)
     customer = Column(Text)
-    discount = Column(Text)
+    discount = Column(JSONB)
     ended_at = Column(DateTime)
     meta = Column(JSONB, name='metadata')
     plan = Column(Text)
@@ -411,15 +454,15 @@ class SubscriptionItem(Base):
 class Transfer(Base):
     amount = Column(BigInteger)
     amount_reversed = Column(BigInteger)
-    balance_transaction = Column(Text)
+    balance_transaction_id = Column(Text)
     created = Column(DateTime)
     currency = Column(Text)
     description = Column(Text)
-    destination = Column(Text)
-    destination_payment = Column(Text)
+    destination_id = Column(Text)
+    destination_payment_id = Column(Text)
     meta = Column(JSONB, name='metadata')
     reversed = Column(Boolean)
-    source_transaction = Column(Text)
+    source_transaction_id = Column(Text)
     source_type = Column(Text)
     transfer_group = Column(Text)
 
@@ -428,11 +471,11 @@ class Transfer(Base):
 
 class TransferReversal(Base):
     amount = Column(BigInteger)
-    balance_transaction = Column(Text)
+    balance_transaction_id = Column(Text)
     created = Column(DateTime)
     currency = Column(Text)
     meta = Column(JSONB, name='metadata')
-    transfer = Column(Text)
+    transfer_id = Column(Text)
 
     @classmethod
     def sync(cls, account):
