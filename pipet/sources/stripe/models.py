@@ -185,7 +185,7 @@ class Customer(Base):
     meta = Column(JSONB, name='metadata')
     shipping = Column(JSONB)
 
-    outcome = Table
+    # outcome = Table TODO
 
     endpoint = '/v1/customers'
 
@@ -247,6 +247,8 @@ class Product(Base):
     unit_label = Column(Text)
     updated = Column(DateTime)
     url = Column(Text)
+
+    endpoint = '/v1/products'
 
 
 class Refund(Base):
@@ -522,6 +524,8 @@ class TransferReversal(Base):
     currency = Column(Text)
     meta = Column(JSONB, name='metadata')
     transfer_id = Column(Text)
+
+    endpoint = None
 
     @classmethod
     def sync(cls, account):
