@@ -68,8 +68,12 @@ class Base(PipetBase):
     @classmethod
     def process_response(cls, response, cursor=None):
         statements = []
-        for data in response.json()['data']:
-            cursor = data['id']
+        datas = response.json()['data']
+
+        if len(datas):
+            cursor = datas[0]['id']
+
+        for data in datas:
             statements.append(cls.upsert(cls.parse(data)))
         return statements, cursor
 
@@ -118,8 +122,12 @@ class BalanceTransaction(Base):
     @classmethod
     def process_response(cls, response, cursor=None):
         statements = []
+        datas = response.json()['data']
+
+        if len(datas):
+            cursor = datas[0]['id']
+
         for data in response.json()['data']:
-            cursor = data['id']
             statements.append(cls.upsert(cls.parse(data)))
             if data['fee_details']:
                 statements.append(cls.fee_details.insert().values(
@@ -321,8 +329,12 @@ class Invoice(Base):
     @classmethod
     def process_response(cls, response, cursor=None):
         statements = []
+        datas = response.json()['data']
+
+        if len(datas):
+            cursor = datas[0]['id']
+
         for data in response.json()['data']:
-            cursor = data['id']
             statements.append(cls.upsert(cls.parse(data)))
 
             for line_data in data['lines']['data']:
@@ -431,8 +443,12 @@ class Subscription(Base):
     @classmethod
     def process_response(cls, response, cursor=None):
         statements = []
+        datas = response.json()['data']
+
+        if len(datas):
+            cursor = datas[0]['id']
+
         for data in response.json()['data']:
-            cursor = data['id']
             statements.append(cls.upsert(cls.parse(data)))
 
             resp = account.get(SubscriptionItem.endpoint,
