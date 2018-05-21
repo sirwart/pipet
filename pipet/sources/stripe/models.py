@@ -19,6 +19,10 @@ CLASS_REGISTRY = {}
 metadata = MetaData(schema=SCHEMANAME)
 
 
+class EmptyResponse(Exception):
+    pass
+
+
 @as_declarative(metadata=metadata, class_registry=CLASS_REGISTRY)
 class Base(PipetBase):
     id = Column(Text, primary_key=True)
@@ -46,53 +50,65 @@ class Base(PipetBase):
 
     @classmethod
     def sync(cls, account):
-        if not cls.endpoint:
-            return [], None, False
+        """
+        Stripe returns list results in reverse chronological order
+        For initial sync, use last id as a cursor for ending_before
+        For incremental sync, use first id as a cursor for starting_after
 
-        statements = []
-        cursor = account.cursors.get(cls.__tablename__)
-        resp = account.get(cls.endpoint, params={'starting_after': cursor})
+        Parameters
+        ----------
+        account : StripeAccount
+
+        Returns
+        -------
+        (list, str, bool)
+            a tuple which is a list of statements, cursor, and
+            a bool of whether there are more
+        """
+        cursor = account.get_cursor(cls.__tablename__)
+        backfilled = account.get_backfilled(cls.__tablename__)
+
+        if backfilled:
+            params = {'starting_after': cursor}
+        else:
+            params = {'ending_before': cursor}
+
+        resp = account.get(cls.endpoint, params=params)
 
         try:
             resp.raise_for_status()
         except HTTPError:
             if resp.status_code == 429:
-                return statements, cursor, False
+                raise EmptyResponse
             raise HTTPError
 
-        ns, cursor = cls.process_response(resp, cursor)
-        statements += ns
+        has_more = resp.json()['has_more']
+        data = resp.json()['data']
 
-        return statements, cursor, resp.json()['has_more']
+        if not data:
+            raise EmptyResponse
+
+        if backfilled:
+            account.set_cursor(cls.__tablename__, data[0]['id'])
+        else:
+            account.set_cursor(cls.__tablename__, data[-1]['id'])
+            if not has_more:
+                account.set_backfilled(cls.__tablename__, True)
+
+        return cls.process_response(resp), cursor, has_more
 
     @classmethod
-    def process_response(cls, response, cursor=None):
+    def process_response(cls, response):
         statements = []
-        datas = response.json()['data']
 
-        if len(datas):
-            cursor = datas[0]['id']
-
-        for data in datas:
+        for data in response.json()['data']:
             statements.append(cls.upsert(cls.parse(data)))
-        return statements, cursor
 
+        return statements
 
-class Source(Base):
-    amount = Column(BigInteger)
-    client_secret = Column(Text)
-    created = Column(DateTime)
-    currency = Column(Text)
-    flow = Column(Text)
-    meta = Column(JSONB, name='metadata')
-    owner = Column(JSONB)
-    receiver = Column(JSONB)
-    redirect = Column(JSONB)
-    status = Column(Text)
-    type = Column(Text)
-    usage = Column(Text)
-
-    endpoint = None
+##################
+# CORE RESOURCES #
+##################
 
 
 class BalanceTransaction(Base):
@@ -118,14 +134,11 @@ class BalanceTransaction(Base):
                         )
 
     endpoint = '/v1/balance/history'
+    event_types = ('balance.available', )
 
     @classmethod
-    def process_response(cls, response, cursor=None):
+    def process_response(cls, response):
         statements = []
-        datas = response.json()['data']
-
-        if len(datas):
-            cursor = datas[0]['id']
 
         for data in response.json()['data']:
             statements.append(cls.upsert(cls.parse(data)))
@@ -133,7 +146,7 @@ class BalanceTransaction(Base):
                 statements.append(cls.fee_details.insert().values(
                     data['fee_details']))
 
-        return statements, cursor
+        return statements
 
 
 class Charge(Base):
@@ -171,6 +184,7 @@ class Charge(Base):
     transfer_group = Column(Text)
 
     endpoint = '/v1/charges'
+    event_types = ('charge', )
 
 
 class Customer(Base):
@@ -188,6 +202,7 @@ class Customer(Base):
     # outcome = Table TODO
 
     endpoint = '/v1/customers'
+    event_types = ('customer', )
 
 
 class Dispute(Base):
@@ -205,6 +220,17 @@ class Dispute(Base):
     status = Column(Text)
 
     endpoint = '/v1/disputes'
+    event_types = ('charge.dispute', )
+
+
+class IssuerFraudRecord(Base):
+    charge_id = Column(Text)
+    created = Column(DateTime)
+    fraud_type = Column(Text)
+    post_date = Column(BigInteger)
+
+    endpoint = '/v1/issuer_fraud_records'
+    event_types = ('issuer_fraud_record', )
 
 
 class Payout(Base):
@@ -227,28 +253,7 @@ class Payout(Base):
     type = Column(Text)
 
     endpoint = '/v1/payouts'
-
-
-class Product(Base):
-    active = Column(Boolean)
-    attributes = Column(ARRAY(Text, dimensions=1))
-    caption = Column(Text)
-    created = Column(DateTime)
-    deactive_on = Column(ARRAY(Text, dimensions=1))
-    description = Column(Text)
-    images = Column(ARRAY(Text, dimensions=1))
-    meta = Column(JSONB, name='metadata')
-    name = Column(Text)
-    package_dimensions = Column(JSONB)
-    shippable = Column(Boolean)
-    skus = Column(ARRAY(Text, dimensions=1))
-    statement_descriptor = Column(Text)
-    type = Column(Text)
-    unit_label = Column(Text)
-    updated = Column(DateTime)
-    url = Column(Text)
-
-    endpoint = '/v1/products'
+    event_types = ('payout', )
 
 
 class Refund(Base):
@@ -265,6 +270,35 @@ class Refund(Base):
     status = Column(Text)
 
     endpoint = '/v1/refunds'
+    event_types = ('charge.refund', )
+
+###################
+# PAYMENT METHODS #
+###################
+
+# We do not sync Bank Account or Card data because it's rarely valuable for analytics
+
+
+class Source(Base):
+    amount = Column(BigInteger)
+    client_secret = Column(Text)
+    created = Column(DateTime)
+    currency = Column(Text)
+    flow = Column(Text)
+    meta = Column(JSONB, name='metadata')
+    owner = Column(JSONB)
+    receiver = Column(JSONB)
+    redirect = Column(JSONB)
+    status = Column(Text)
+    type = Column(Text)
+    usage = Column(Text)
+
+    endpoint = None
+    event_types = ('source', 'customer.source')
+
+#################
+# SUBSCRIPTIONS #
+#################
 
 
 class Coupon(Base):
@@ -281,6 +315,7 @@ class Coupon(Base):
     valid = Column(Boolean)
 
     endpoint = '/v1/coupons'
+    event_types = ('coupon', )
 
 
 class Discount(Base):
@@ -290,6 +325,7 @@ class Discount(Base):
     start = Column(DateTime)
 
     endpoint = None
+    event_types = ('customer.discount', )
 
 
 class Invoice(Base):
@@ -327,14 +363,11 @@ class Invoice(Base):
     webhooks_delivered_at = Column(DateTime)
 
     endpoint = '/v1/invoices'
+    event_types = ('invoice', )
 
     @classmethod
-    def process_response(cls, response, cursor=None):
+    def process_response(cls, response):
         statements = []
-        datas = response.json()['data']
-
-        if len(datas):
-            cursor = datas[0]['id']
 
         for data in response.json()['data']:
             statements.append(cls.upsert(cls.parse(data)))
@@ -342,25 +375,7 @@ class Invoice(Base):
             for line_data in data['lines']['data']:
                 statements.append(cls.upsert(cls.parse(line_data)))
 
-        return statements, cursor
-
-
-class InvoiceLineItem(Base):
-    amount = Column(BigInteger)
-    currency = Column(Text)
-    description = Column(Text)
-    discountable = Column(Text)
-    invoice_item_id = Column(Text)
-    meta = Column(JSONB, name='metadata')
-    period = Column(JSONB)
-    plan_id = Column(Text)
-    proration = Column(Boolean)
-    quantity = Column(BigInteger)
-    subscription_id = Column(Text)
-    subscription_item_id = Column(Text)
-    type = Column(Text)
-
-    endpoint = None
+        return statements
 
 
 class InvoiceItem(Base):
@@ -381,6 +396,49 @@ class InvoiceItem(Base):
     unit_amount = Column(BigInteger)
 
     endpoint = '/v1/invoiceitems'
+    event_types = ('invoiceitem', )
+
+
+class InvoiceLineItem(Base):
+    amount = Column(BigInteger)
+    currency = Column(Text)
+    description = Column(Text)
+    discountable = Column(Text)
+    invoice_item_id = Column(Text)
+    meta = Column(JSONB, name='metadata')
+    period = Column(JSONB)
+    plan_id = Column(Text)
+    proration = Column(Boolean)
+    quantity = Column(BigInteger)
+    subscription_id = Column(Text)
+    subscription_item_id = Column(Text)
+    type = Column(Text)
+
+    endpoint = None
+    event_types = (None, )
+
+
+class Product(Base):
+    active = Column(Boolean)
+    attributes = Column(ARRAY(Text, dimensions=1))
+    caption = Column(Text)
+    created = Column(DateTime)
+    deactive_on = Column(ARRAY(Text, dimensions=1))
+    description = Column(Text)
+    images = Column(ARRAY(Text, dimensions=1))
+    meta = Column(JSONB, name='metadata')
+    name = Column(Text)
+    package_dimensions = Column(JSONB)
+    shippable = Column(Boolean)
+    skus = Column(ARRAY(Text, dimensions=1))
+    statement_descriptor = Column(Text)
+    type = Column(Text)
+    unit_label = Column(Text)
+    updated = Column(DateTime)
+    url = Column(Text)
+
+    endpoint = '/v1/products'
+    event_types = ('product', )
 
 
 class Plan(Base):
@@ -401,6 +459,7 @@ class Plan(Base):
     usage_type = Column(Text)
 
     endpoint = '/v1/plans'
+    event_types = ('plan', )
 
 
 class Subscription(Base):
@@ -423,38 +482,17 @@ class Subscription(Base):
     trial_start = Column(DateTime)
 
     endpoint = '/v1/subscriptions'
+    event_types = ('customer.subscription', )
 
     @classmethod
-    def sync(cls, account):
+    def process_response(cls, response):
         statements = []
-        cursor = account.cursors.get(cls.__tablename__)
-        resp = account.get(cls.endpoint, params={'starting_after': cursor})
-
-        try:
-            resp.raise_for_status()
-        except HTTPError:
-            if resp.status_code == 429:
-                return statements, cursor, False
-            raise HTTPError
-
-        ns, cursor = cls.process_response(resp, cursor)
-        statements += ns
-
-        return statements, cursor, resp.json()['has_more']
-
-    @classmethod
-    def process_response(cls, response, cursor=None):
-        statements = []
-        datas = response.json()['data']
-
-        if len(datas):
-            cursor = datas[0]['id']
 
         for data in response.json()['data']:
             statements.append(cls.upsert(cls.parse(data)))
 
             resp = account.get(SubscriptionItem.endpoint,
-                               params={'subscription': cursor})
+                               params={'subscription': data['id']})
 
             si_cursor = None
             while True:
@@ -465,7 +503,7 @@ class Subscription(Base):
                 if not has_more:
                     break
 
-        return statements, cursor
+        return statements
 
 
 class SubscriptionItem(Base):
@@ -475,6 +513,7 @@ class SubscriptionItem(Base):
     subscription_id = Column(Text)
 
     endpoint = '/v1/subscription_items'
+    event_types = (None, )
 
     @classmethod
     def sync(cls, account):
@@ -493,10 +532,14 @@ class SubscriptionItem(Base):
                 return statements, cursor, False
             raise HTTPError
 
-        ns, cursor = cls.process_response(resp, cursor)
+        ns, cursor = cls.process_response(resp)
         statements += ns
 
         return statements, cursor, resp.json()['has_more']
+
+###########
+# CONNECT #
+###########
 
 
 class Transfer(Base):
@@ -515,6 +558,7 @@ class Transfer(Base):
     transfer_group = Column(Text)
 
     endpoint = '/v1/transfers'
+    event_types = ('transfer', )
 
 
 class TransferReversal(Base):
@@ -526,7 +570,74 @@ class TransferReversal(Base):
     transfer_id = Column(Text)
 
     endpoint = None
+    event_types = (None, )
 
-    @classmethod
-    def sync(cls, account):
-        return [], None, False
+##########
+# ORDERS #
+##########
+
+
+class Order(Base):
+    amount = Column(BigInteger)
+    amount_returned = Column(BigInteger)
+    application = Column(Text)
+    application_fee = Column(BigInteger)
+    charge = Column(Text)
+    created = Column(DateTime)
+    currency = Column(Text)
+    customer = Column(Text)
+    email = Column(Text)
+    external_coupon_code = Column(Text)
+    items = Table('order_items', metadata,
+                  Column('amount', BigInteger),
+                  Column('currency', Text),
+                  Column('description', Text),
+                  Column('parent', Text),
+                  Column('quantity', BigInteger),
+                  Column('type', Text))
+    meta = Column(JSONB, name='metadata')
+    selected_shipping_method = Column(Text)
+    shipping = Column(JSONB)
+    shipping_methods = Column(JSONB)
+    status = Column(Text)
+    status_transitions = Column(JSONB)
+    updated = Column(DateTime)
+    upstream_id = Column(Text)
+
+    endpoint = '/v1/orders'
+    event_types = ('order', )
+
+
+class OrderReturn(Base):
+    amount = Column(BigInteger)
+    created = Column(DateTime)
+    currency = Column(Text)
+    items = Table('return_items', metadata,
+                  Column('amount', BigInteger),
+                  Column('currency', Text),
+                  Column('description', Text),
+                  Column('parent', Text),
+                  Column('quantity', BigInteger),
+                  Column('type', Text))
+    order = Column(Text)
+    refund = Column(Text)
+
+    endpoint = '/v1/order_returns'
+    event_types = ('order_return', )
+
+
+class SKU(Base):
+    active = Column(Boolean)
+    attributes = Column(JSONB)
+    created = Column(DateTime)
+    currency = Column(Text)
+    image = Column(Text)
+    inventory = Column(JSONB)
+    meta = Column(JSONB, name='metadata')
+    package_dimensions = Column(JSONB)
+    price = Column(BigInteger)
+    product = Column(Text)
+    updated = Column(DateTime)
+
+    endpoint = '/v1/skus'
+    event_types = ('sku', )
