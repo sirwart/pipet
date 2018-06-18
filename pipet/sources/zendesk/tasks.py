@@ -27,7 +27,7 @@ def sync(account_id):
     session = account.organization.create_session()
 
     for cls in [m for n, m in CLASS_REGISTRY.items() if isclass(m) and issubclass(m, Base)]:
-        # Make these parallel to speed up execution
+        # TODO: Make these parallel to speed up execution
         while True:
             conn = session.connection()
             statments, cursor, has_more = cls.sync(account)

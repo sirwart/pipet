@@ -28,6 +28,10 @@ class Base(PipetBase):
     id = Column(Text, primary_key=True)
 
     @classmethod
+    def object_type(cls):
+        return camel_to_snake_case(cls.__name__)
+
+    @classmethod
     def parse(cls, data):
         d = {}
         for field, column in cls.__table__._columns.items():
@@ -49,11 +53,11 @@ class Base(PipetBase):
         return d
 
     @classmethod
-    def sync(cls, account):
+    def sync(cls, account, cursor):
         """
         Stripe returns list results in reverse chronological order
-        For initial sync, use last id as a cursor for ending_before
-        For incremental sync, use first id as a cursor for starting_after
+        This function is only used for the initial backfill.
+        Afterwards, stripe.tasks.update is used.
 
         Parameters
         ----------
@@ -65,13 +69,7 @@ class Base(PipetBase):
             a tuple which is a list of statements, cursor, and
             a bool of whether there are more
         """
-        cursor = account.get_cursor(cls.__tablename__)
-        backfilled = account.get_backfilled(cls.__tablename__)
-
-        if backfilled:
-            params = {'starting_after': cursor}
-        else:
-            params = {'ending_before': cursor}
+        params = {'ending_before': cursor}
 
         resp = account.get(cls.endpoint, params=params)
 
@@ -87,13 +85,6 @@ class Base(PipetBase):
 
         if not data:
             raise EmptyResponse
-
-        if backfilled:
-            account.set_cursor(cls.__tablename__, data[0]['id'])
-        else:
-            account.set_cursor(cls.__tablename__, data[-1]['id'])
-            if not has_more:
-                account.set_backfilled(cls.__tablename__, True)
 
         return cls.process_response(resp), cursor, has_more
 
@@ -516,7 +507,7 @@ class SubscriptionItem(Base):
     event_types = (None, )
 
     @classmethod
-    def sync(cls, account):
+    def sync(cls, account, cursor):
         return [], None, False
 
     @classmethod
