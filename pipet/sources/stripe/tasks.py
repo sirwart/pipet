@@ -15,8 +15,11 @@ from pipet.sources.stripe.models import (
 
 @celery.task(base=QueueOnce)
 def sync(account_id):
-    # backfill or update
-    pass
+    account = StripeAccount.query.get(account_id)
+    if account.backfilled:
+        update()
+    else:
+        account.backfill()
 
 
 def get_class_for_object_type(object_type):
@@ -76,7 +79,6 @@ def backfill(account):
     resp.raise_for_status()
     event_id = resp.json()['data'][0]['id']
 
-    account = StripeAccount.query.get(account_id)
     session = account.organization.create_session()
 
     for cls in [m for n, m in CLASS_REGISTRY.items() if isclass(m) and issubclass(m, Base) and m.endpoint]:
