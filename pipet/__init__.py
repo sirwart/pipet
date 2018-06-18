@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import logging
 import os
+import sys
 
 from dotenv import load_dotenv
 from flask import Flask
@@ -22,6 +23,7 @@ class Base(Model):
     created = Column(DateTime, server_default=func.now(), nullable=False)
 
 
+logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 load_dotenv()
 csrf = CSRFProtect()
 db = SQLAlchemy(model_class=Base)

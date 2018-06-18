@@ -83,7 +83,9 @@ class Base(PipetBase):
         has_more = resp.json()['has_more']
         data = resp.json()['data']
 
-        if not data:
+        if data:
+            cursor = data[-1]['id']
+        else:
             raise EmptyResponse
 
         return cls.process_response(resp), cursor, has_more
@@ -214,14 +216,14 @@ class Dispute(Base):
     event_types = ('charge.dispute', )
 
 
-class IssuerFraudRecord(Base):
-    charge_id = Column(Text)
-    created = Column(DateTime)
-    fraud_type = Column(Text)
-    post_date = Column(BigInteger)
+# class IssuerFraudRecord(Base):
+#     charge_id = Column(Text)
+#     created = Column(DateTime)
+#     fraud_type = Column(Text)
+#     post_date = Column(BigInteger)
 
-    endpoint = '/v1/issuer_fraud_records'
-    event_types = ('issuer_fraud_record', )
+#     endpoint = '/v1/issuer_fraud_records'
+#     event_types = ('issuer_fraud_record', )
 
 
 class Payout(Base):
