@@ -108,6 +108,22 @@ class StripeAccount(db.Model):
         logging.info(
             'Starting backfill for <StripeAccount {}>'.format(self.id))
 
+        # Get latests event_id. Iterating is faster than allowing the
+        # update function to attempt to upsert.
+        event_id = None
+        while True:
+            resp = self.get('/v1/events',
+                            params={'starting_after': event_id})
+
+            if resp.json()['data']:
+                event_id = resp.json()['data'][-1]['id']
+            else:
+                break
+
+            if not resp.json()['has_more']:
+                break
+
+        # Start Backfill
         session = self.organization.create_session()
 
         for cls in [m for n, m in CLASS_REGISTRY.items() if isclass(m) and issubclass(m, Base) and m.endpoint]:
@@ -134,4 +150,4 @@ class StripeAccount(db.Model):
         db.session.add(self)
         db.session.commit()
 
-        self.update()
+        self.update(event_id)

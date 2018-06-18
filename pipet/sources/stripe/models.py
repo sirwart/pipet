@@ -55,7 +55,8 @@ class Base(PipetBase):
     @classmethod
     def sync(cls, account, cursor):
         """
-        Stripe returns list results in reverse chronological order
+        Stripe returns list results in reverse chronological order (from newest to oldest)
+        so `starting_after` parameter is used for pagination.
         This function is only used for the initial backfill.
         Afterwards, stripe.tasks.update is used.
 
@@ -69,7 +70,7 @@ class Base(PipetBase):
             a tuple which is a list of statements, cursor, and
             a bool of whether there are more
         """
-        params = {'ending_before': cursor}
+        params = {'starting_after': cursor}
 
         resp = account.get(cls.endpoint, params=params)
 
