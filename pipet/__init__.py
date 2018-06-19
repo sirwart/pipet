@@ -78,18 +78,25 @@ from pipet import cli  # NOQA
 
 from pipet.sources.zendesk import ZendeskAccount
 from pipet.sources.zendesk.views import blueprint as zendesk_blueprint
-from pipet.sources.zendesk.tasks import sync as sync_zendesk
+from pipet.sources.zendesk.tasks import sync as zendesk_sync_all
 
 
 app.register_blueprint(zendesk_blueprint, url_prefix='/zendesk')
 
+
+@celery.on_after_configure.connect
+def setup_periodic_tasks(sender, **kwargs):
+    sender.add_periodic_task(60, zendesk_sync_all.s(), name='test')
+
+
 from pipet.sources.stripe import StripeAccount
 from pipet.sources.stripe.views import blueprint as stripe_blueprint
-from pipet.sources.stripe.tasks import sync_all
+from pipet.sources.stripe.tasks import sync_all as stripe_sync_all
+
 
 app.register_blueprint(stripe_blueprint, url_prefix='/stripe')
 
 
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
-    sender.add_periodic_task(3, sync_all.s(), name='test')
+    sender.add_periodic_task(60, stripe_sync_all.s(), name='test')

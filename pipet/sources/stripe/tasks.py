@@ -1,6 +1,3 @@
-from datetime import datetime
-import time
-
 from celery import group
 from celery_once import QueueOnce
 

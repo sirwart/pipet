@@ -2,12 +2,11 @@ from contextlib import contextmanager
 from datetime import datetime
 from inspect import isclass
 
-from celery import chord
+from celery import chord, group
 from celery_once import QueueOnce
 from celery.schedules import crontab
 from celery.utils.log import get_task_logger
 from sqlalchemy.orm.attributes import flag_modified
-from sqlalchemy.sql import func
 
 from pipet import celery, db
 from pipet.models import Organization
@@ -21,26 +20,33 @@ from pipet.sources.zendesk.models import (
 logger = get_task_logger(__name__)
 
 
-@celery.task(base=QueueOnce)
+@celery.task(base=QueueOnce, once={'graceful': True})
 def sync(account_id):
-    account = ZendeskAccount.query.get(account_id)
-    session = account.organization.create_session()
+    with app.app_context():
+        account = ZendeskAccount.query.get(account_id)
+        session = account.organization.create_session()
 
-    for cls in [m for n, m in CLASS_REGISTRY.items() if isclass(m) and issubclass(m, Base)]:
-        # TODO: Make these parallel to speed up execution
-        while True:
-            conn = session.connection()
-            statments, cursor, has_more = cls.sync(account)
-            account.cursors[cls.__tablename__] = cursor
-            flag_modified(account, 'cursors')
+        for cls in [m for n, m in CLASS_REGISTRY.items() if isclass(m) and issubclass(m, Base)]:
+            # TODO: Make these parallel to speed up execution
+            while True:
+                conn = session.connection()
+                statments, cursor, has_more = cls.sync(account)
+                account.cursors[cls.__tablename__] = cursor
+                flag_modified(account, 'cursors')
 
-            for statement in statments:
-                conn.execute(statement)
+                for statement in statments:
+                    conn.execute(statement)
 
-            session.commit()
+                session.commit()
 
-            db.session.add(account)
-            db.session.commit()
+                db.session.add(account)
+                db.session.commit()
 
-            if not has_more:
-                break
+                if not has_more:
+                    break
+
+
+@celery.task
+def sync_all():
+    job = group([sync.s(account.id) for account in ZendeskAccount.query.all()])
+    job.apply_async()
