@@ -74,7 +74,7 @@ class StripeAccount(db.Model):
         while True:
             conn = session.connection()
             resp = self.get('/v1/events',
-                            params={'starting_after': event_id})
+                            params={'ending_before': event_id})
             resp.raise_for_status()
             data = resp.json()['data']
 
@@ -86,7 +86,7 @@ class StripeAccount(db.Model):
                 statements.append(cls.upsert(cls.parse(event_object)))
 
             if len(data):
-                event_id = data[-1]['id']
+                event_id = data[0]['id']
             else:
                 break
 

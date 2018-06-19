@@ -30,24 +30,27 @@ db = SQLAlchemy(model_class=Base)
 login_manager = LoginManager()
 sentry = Sentry(logging=True, level=logging.ERROR, wrap_wsgi=True)
 
-app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
-    'POSTGRES_URI')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SERVER_NAME'] = os.environ.get('SERVER_NAME', None)
-app.config['PREFERRED_URL_SCHEME'] = os.environ.get('PREFERRED_URL_SCHEME')
-app.config['CELERY_RESULT_BACKEND'] = os.environ.get('REDIS_URL')
-app.config['CELERY_BROKER_URL'] = os.environ.get('REDIS_URL')
-app.config['GOOGLE_PICKER_API_KEY'] = os.environ.get('GOOGLE_PICKER_API_KEY')
-app.config['WEBPACK_MANIFEST_PATH'] = 'static/build/manifest.json'
-app.secret_key = os.environ.get('FLASK_SECRET_KEY')
 
+def create_app():
+    app = Flask(__name__)
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
+        'POSTGRES_URI')
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['SERVER_NAME'] = os.environ.get('SERVER_NAME', None)
+    app.config['PREFERRED_URL_SCHEME'] = os.environ.get('PREFERRED_URL_SCHEME')
+    app.config['GOOGLE_PICKER_API_KEY'] = os.environ.get(
+        'GOOGLE_PICKER_API_KEY')
+    app.config['WEBPACK_MANIFEST_PATH'] = 'static/build/manifest.json'
+    app.secret_key = os.environ.get('FLASK_SECRET_KEY')
+    return app
+
+
+app = create_app()
 csrf.init_app(app)
 db.init_app(app)
 sentry.init_app(app)
 login_manager.init_app(app)
 login_manager.login_view = 'index'
-
 celery = make_celery(app)
 celery.conf.ONCE = {
     'backend': 'celery_once.backends.Redis',
@@ -56,6 +59,7 @@ celery.conf.ONCE = {
         'default_timeout': 60 * 60,
     }
 }
+
 
 from pipet.models import User
 
@@ -74,12 +78,18 @@ from pipet import cli  # NOQA
 
 from pipet.sources.zendesk import ZendeskAccount
 from pipet.sources.zendesk.views import blueprint as zendesk_blueprint
+from pipet.sources.zendesk.tasks import sync as sync_zendesk
+
 
 app.register_blueprint(zendesk_blueprint, url_prefix='/zendesk')
 
 from pipet.sources.stripe import StripeAccount
 from pipet.sources.stripe.views import blueprint as stripe_blueprint
+from pipet.sources.stripe.tasks import sync_all
 
 app.register_blueprint(stripe_blueprint, url_prefix='/stripe')
 
-from pipet.sources.zendesk.tasks import sync as sync_zendesk
+
+@celery.on_after_configure.connect
+def setup_periodic_tasks(sender, **kwargs):
+    sender.add_periodic_task(3, sync_all.s(), name='test')
